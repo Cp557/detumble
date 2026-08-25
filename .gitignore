@@ -1,0 +1,6 @@
+/docs/CONCEPTS.md
+/.DS_Store
+/build/
+/build-*/
+/CMakeUserPresets.json
+/runs/
