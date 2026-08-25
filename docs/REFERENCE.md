@@ -4,7 +4,7 @@ This document is the canonical reference for Detumble's implemented architecture
 
 ## Current Status
 
-Phase 0's local project foundation is complete. Debug and release builds pass on macOS, and the current executables are intentionally small placeholders. The first hosted Linux and Windows validation will occur after the repository is pushed to GitHub. Spacecraft math and simulation behavior begin in Phase 1.
+Phase 0 is complete. Debug and release builds pass locally on macOS, and the GitHub Actions debug build and smoke test pass on hosted macOS, Linux, and Windows runners. The current executables are intentionally small placeholders; spacecraft math and simulation behavior begin in Phase 1.
 
 ## Repository Layout
 

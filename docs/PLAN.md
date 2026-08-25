@@ -80,9 +80,9 @@ Dependency versions will be pinned after small compatibility prototypes confirm 
 
 Validation gate:
 
-- [ ] All three operating systems configure, compile, and pass the smoke test.
+- [x] All three operating systems configure, compile, and pass the smoke test.
 
-Local status: macOS debug and release builds pass. The Linux and Windows checks await the first GitHub Actions run after the repository is authenticated and pushed.
+Validation status: local macOS debug and release builds pass. GitHub Actions also passes the debug build and smoke test on macOS, Linux, and Windows.
 
 ## Phase 1 — Frames, Math, and Conventions
 
