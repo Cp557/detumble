@@ -21,6 +21,14 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      - name: Install Linux graphics dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libasound2-dev libgl1-mesa-dev \
+            libx11-dev libxcursor-dev libxi-dev libxinerama-dev \
+            libxrandr-dev
+
       - name: Configure
         run: cmake --preset debug
 

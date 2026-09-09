@@ -8,6 +8,8 @@ Detumble will be a cross-platform C++ desktop simulation of a generic 3U CubeSat
 
 The desktop viewer will provide close-up and orbital camera views, live telemetry, flight-mode status, and optional overlays for reference frames, angular velocity, magnetic field, Sun direction, actuator commands, and control torque.
 
+The simulator and flight-software algorithms will run through one native C++ path. This keeps the application fast, understandable, and portable across macOS, Linux, and Windows.
+
 ## Scope Boundary
 
 Included:
@@ -36,6 +38,9 @@ Excluded:
 - Detailed electrical, thermal, structural, or power-system simulation
 - Flexible-body dynamics and vibration
 - Detailed reaction-wheel motor electronics or bearing models
+- Flight-qualified software or certification claims
+- Deployment to physical spacecraft hardware
+- RTEMS, VxWorks, or hardware-in-the-loop integration
 
 ## Proposed Technical Stack
 
@@ -51,18 +56,20 @@ Excluded:
 - CSV for human-readable telemetry output
 - GitHub Actions for cross-platform builds and tests
 
-Dependency versions will be pinned after small compatibility prototypes confirm the complete stack works together.
+The Phase 3 compatibility prototype pins raylib 6.0, Dear ImGui 1.92.7, ImPlot 1.0, and a raylib-6-compatible rlImGui revision. Later application dependencies will be pinned when their phase introduces them.
 
 ## Engineering Rules
 
-- [ ] Define every vector's reference frame and use SI units internally.
-- [ ] Keep the simulation core independent of rendering and user-interface code.
-- [ ] Keep the true simulation state private from flight software and controllers.
-- [ ] Make every randomized run reproducible from a recorded seed.
-- [ ] Use fixed simulation timesteps and explicit sensor and controller sample rates.
-- [ ] Add tests before increasing a model's physical complexity.
-- [ ] Record important assumptions, coordinate conventions, and architecture in `docs/REFERENCE.md`.
-- [ ] Add personal explanations and lessons to the ignored `docs/CONCEPTS.md` throughout development.
+- [x] Define every vector's reference frame and use SI units internally.
+- [x] Keep the simulation core independent of rendering and user-interface code.
+- [x] Keep the true simulation state private from flight software and controllers.
+- [x] Make every randomized run reproducible from a recorded seed.
+- [x] Use fixed simulation timesteps and explicit sensor and controller sample rates.
+- [x] Add tests before increasing a model's physical complexity.
+- [x] Record important assumptions, coordinate conventions, and architecture in `docs/REFERENCE.md`.
+- [x] Add personal explanations and lessons to the ignored `docs/CONCEPTS.md` throughout development.
+- [x] Keep control and estimation algorithms independent of rendering, networking, and simulation truth.
+- [x] Never expose unavailable truth-state data to flight-software algorithms.
 
 ## Phase 0 — Repository and Build Foundation
 
@@ -86,235 +93,275 @@ Validation status: local macOS debug and release builds pass. GitHub Actions als
 
 ## Phase 1 — Frames, Math, and Conventions
 
-- [ ] Define the Earth-centered inertial, orbital, and spacecraft body frames.
-- [ ] Choose and document right-handed axis directions.
-- [ ] Define whether the attitude quaternion maps body coordinates to inertial coordinates or the reverse.
-- [ ] Define quaternion storage and multiplication conventions.
-- [ ] Add strongly named state structures with units included in member names where helpful.
-- [ ] Implement small helpers for vector-frame transformations.
-- [ ] Implement quaternion normalization and attitude integration using Eigen primitives.
-- [ ] Test identity, known-axis rotations, inverse rotations, composition order, and normalization.
-- [ ] Explain vectors, frames, angular velocity, rotation matrices, and quaternions in `docs/CONCEPTS.md`.
+- [x] Define the Earth-centered inertial, orbital, and spacecraft body frames.
+- [x] Choose and document right-handed axis directions.
+- [x] Define whether the attitude quaternion maps body coordinates to inertial coordinates or the reverse.
+- [x] Define quaternion storage and multiplication conventions.
+- [x] Add strongly named state structures with units included in member names where helpful.
+- [x] Implement small helpers for vector-frame transformations.
+- [x] Implement quaternion normalization and attitude integration using Eigen primitives.
+- [x] Test identity, known-axis rotations, inverse rotations, composition order, and normalization.
+- [x] Explain vectors, frames, angular velocity, rotation matrices, and quaternions in `docs/CONCEPTS.md`.
 
 Validation gate:
 
-- [ ] Known vectors rotate between body and inertial frames with the expected direction and sign.
+- [x] Known vectors rotate between body and inertial frames with the expected direction and sign.
 
 ## Phase 2 — Rigid-Body Attitude Dynamics
 
-- [ ] Define approximate mass, dimensions, center of mass, and diagonal inertia for a generic 3U CubeSat.
-- [ ] Implement Euler's rigid-body rotational equation.
-- [ ] Propagate angular velocity and attitude with a fixed-step RK4 integrator.
-- [ ] Renormalize the attitude quaternion at a documented point in the integration loop.
-- [ ] Support zero torque and externally supplied body torque.
-- [ ] Add deterministic initial attitude and angular-velocity generation from a seed.
-- [ ] Add a minimal CLI run that prints final attitude, angular velocity, and rotational energy.
-- [ ] Test spherical-body motion, asymmetric torque-free motion, and constant applied torque.
-- [ ] Track angular momentum, rotational energy, and quaternion norm for validation.
-- [ ] Explain inertia, torque, angular momentum, and rigid-body dynamics in `docs/CONCEPTS.md`.
+- [x] Define approximate mass, dimensions, center of mass, and diagonal inertia for a generic 3U CubeSat.
+- [x] Implement Euler's rigid-body rotational equation.
+- [x] Propagate angular velocity and attitude with a fixed-step RK4 integrator.
+- [x] Renormalize the attitude quaternion at a documented point in the integration loop.
+- [x] Support zero torque and externally supplied body torque.
+- [x] Add deterministic initial attitude and angular-velocity generation from a seed.
+- [x] Add a minimal CLI run that prints final attitude, angular velocity, and rotational energy.
+- [x] Test spherical-body motion, asymmetric torque-free motion, and constant applied torque.
+- [x] Track angular momentum, rotational energy, and quaternion norm for validation.
+- [x] Explain inertia, torque, angular momentum, and rigid-body dynamics in `docs/CONCEPTS.md`.
 
 Validation gate:
 
-- [ ] Torque-free runs conserve angular momentum and rotational energy within documented numerical tolerances.
-- [ ] Quaternion norm remains within its documented tolerance.
+- [x] Torque-free runs conserve angular momentum and rotational energy within documented numerical tolerances.
+- [x] Quaternion norm remains within its documented tolerance.
 
 ## Phase 3 — First Visual Slice
 
-- [ ] Prototype raylib, Dear ImGui, ImPlot, and GLB loading in one cross-platform viewer.
-- [ ] Pin compatible visualization dependency versions.
-- [ ] Render a simple 3U rectangular placeholder using the propagated attitude.
-- [ ] Add an orbiting close-up camera and body-axis overlay.
-- [ ] Add pause, resume, reset, single-step, and playback-speed controls.
-- [ ] Plot body rates and quaternion norm live.
-- [ ] Keep simulation updates fixed-step and independent of rendering frame rate.
+- [x] Prototype raylib, Dear ImGui, ImPlot, and GLB loading in one cross-platform viewer.
+- [x] Pin compatible visualization dependency versions.
+- [x] Render a simple 3U rectangular placeholder using the propagated attitude.
+- [x] Add an orbiting close-up camera and body-axis overlay.
+- [x] Add pause, resume, reset, single-step, and playback-speed controls.
+- [x] Plot body rates and quaternion norm live.
+- [x] Keep simulation updates fixed-step and independent of rendering frame rate.
 
 Validation gate:
 
-- [ ] The same seeded run produces the same final state with and without the viewer.
-- [ ] The visible body-axis rotations agree with the frame-convention tests.
+- [x] The same seeded run produces the same final state with and without the viewer.
+- [x] The visible body-axis rotations agree with the frame-convention tests.
+
+Validation status: the full viewer stack builds and launches on macOS, the uncompressed NASA GLB loads successfully, and all 25 viewer-enabled tests pass. The viewer and CLI use the same fixed-step simulation runner. Body-axis endpoints and the 3U outline use the tested body-to-inertial frame transform directly, and a raylib integration test confirms the rendered model uses the same positive-rotation convention.
 
 ## Phase 4 — Orbit and Magnetic Environment
 
-- [ ] Implement a simplified 500 km circular orbit with configurable inclination.
-- [ ] Produce spacecraft position in the inertial frame as a function of simulation time.
-- [ ] Implement a centered, tilted-dipole Earth magnetic-field model.
-- [ ] Transform the local magnetic field from inertial coordinates into body coordinates.
-- [ ] Validate magnetic-field magnitude and direction at selected orbital positions.
-- [ ] Record position and magnetic-field telemetry.
-- [ ] Add optional orbit-path and magnetic-field-vector overlays to the viewer.
-- [ ] Explain Low Earth Orbit, orbital frames, and Earth's magnetic field in `docs/CONCEPTS.md`.
+- [x] Implement a simplified 500 km circular orbit with configurable inclination.
+- [x] Produce spacecraft position in the inertial frame as a function of simulation time.
+- [x] Implement a centered, tilted-dipole Earth magnetic-field model.
+- [x] Transform the local magnetic field from inertial coordinates into body coordinates.
+- [x] Validate magnetic-field magnitude and direction at selected orbital positions.
+- [x] Record position and magnetic-field telemetry.
+- [x] Add optional orbit-path and magnetic-field-vector overlays to the viewer.
+- [x] Explain Low Earth Orbit, orbital frames, and Earth's magnetic field in `docs/CONCEPTS.md`.
 
 Validation gate:
 
-- [ ] One complete orbit is periodic and the local magnetic field varies smoothly through a plausible range.
+- [x] One complete orbit is periodic and the local magnetic field varies smoothly through a plausible range.
+
+Validation status: the default 500 km, 51.6-degree orbit returns to its initial inertial position and velocity after one 94.47-minute period within numerical tolerance. Across 720 samples per orbit, the tilted-dipole field remains between 20 and 60 microtesla and changes smoothly by less than 1 microtesla between adjacent samples.
 
 ## Phase 5 — Magnetometer and Magnetorquers
 
-- [ ] Implement an ideal three-axis magnetometer with a configurable sample rate.
-- [ ] Implement three orthogonal magnetorquers with configurable dipole limits.
-- [ ] Convert commanded coil dipoles into a combined body-frame magnetic dipole.
-- [ ] Compute magnetic torque using the commanded dipole and local magnetic field.
-- [ ] Model a control cycle that disables the torquers before magnetometer sampling.
-- [ ] Enforce actuator saturation and record commanded versus applied dipole.
-- [ ] Test that magnetic torque is perpendicular to the magnetic field.
-- [ ] Test that no magnetorquer command exceeds its configured limit.
-- [ ] Explain magnetometers, magnetorquers, magnetic dipole, and magnetic torque in `docs/CONCEPTS.md`.
+- [x] Implement an ideal three-axis magnetometer with a configurable sample rate.
+- [x] Implement three orthogonal magnetorquers with configurable dipole limits.
+- [x] Convert commanded coil dipoles into a combined body-frame magnetic dipole.
+- [x] Compute magnetic torque using the commanded dipole and local magnetic field.
+- [x] Model a control cycle that disables the torquers before magnetometer sampling.
+- [x] Enforce actuator saturation and record commanded versus applied dipole.
+- [x] Test that magnetic torque is perpendicular to the magnetic field.
+- [x] Test that no magnetorquer command exceeds its configured limit.
+- [x] Explain magnetometers, magnetorquers, magnetic dipole, and magnetic torque in `docs/CONCEPTS.md`.
 
 Validation gate:
 
-- [ ] Known magnetic-dipole and field vectors produce the expected torque direction and magnitude.
+- [x] Known magnetic-dipole and field vectors produce the expected torque direction and magnitude.
+
+Validation status: a `+X` dipole of `1 A m^2` crossed with a `+Z` field of `20 microtesla` produces `-Y` torque of `20 micronewton-meters`. Tests also verify that torque is perpendicular to both input vectors, commands remain within each configured limit, magnetometer samples occur at the configured rate with the coils off, and applied magnetic torque changes the simulated attitude dynamics.
 
 ## Phase 6 — B-dot Detumble Milestone
 
-- [ ] Estimate the body-frame magnetic-field derivative from sampled measurements.
-- [ ] Add a simple configurable low-pass filter for the derivative estimate.
-- [ ] Implement a saturated B-dot controller with an explicitly tested sign convention.
-- [ ] Add ideal gyro rate measurements for transition detection and telemetry.
-- [ ] Define a detumble threshold, hysteresis band, and dwell time.
-- [ ] Add `BOOT` and `DETUMBLE` flight modes.
-- [ ] Add CLI configuration for duration, timestep, seed, initial rate, and output path.
-- [ ] Export attitude, body rate, energy, field, dipole, torque, and flight mode to CSV.
-- [ ] Plot rate, energy, dipole command, and control mode in the viewer.
-- [ ] Test B-dot against representative fixed and randomized initial states.
-- [ ] Explain B-dot control, gain, filtering, saturation, hysteresis, and dwell time in `docs/CONCEPTS.md`.
+- [x] Estimate the body-frame magnetic-field derivative from sampled measurements.
+- [x] Add a simple configurable low-pass filter for the derivative estimate.
+- [x] Implement a saturated B-dot controller with an explicitly tested sign convention.
+- [x] Add ideal gyro rate measurements for transition detection and telemetry.
+- [x] Define a detumble threshold, hysteresis band, and dwell time.
+- [x] Add `BOOT` and `DETUMBLE` flight modes.
+- [x] Add CLI configuration for duration, timestep, seed, initial rate, and output path.
+- [x] Export attitude, body rate, energy, field, dipole, torque, and flight mode to CSV.
+- [x] Plot rate, energy, dipole command, and control mode in the viewer.
+- [x] Test B-dot against representative fixed and randomized initial states.
+- [x] Explain B-dot control, gain, filtering, saturation, hysteresis, and dwell time in `docs/CONCEPTS.md`.
 
 Validation gate:
 
-- [ ] A documented batch of seeded scenarios reduces body rates below the detumble threshold for the required dwell time.
-- [ ] Rotational kinetic energy trends downward across the batch despite short local increases.
+- [x] A documented batch of seeded scenarios reduces body rates below the detumble threshold for the required dwell time.
+- [x] Rotational kinetic energy trends downward across the batch despite short local increases.
 
 Milestone result: a complete, validated headless and visual B-dot detumble simulation.
 
+Validation status: seeds `7`, `42`, and `2026` begin at fixed magnitudes of `5`, `10`, and `15 deg/s` with seeded random attitudes and tumble axes. All three remain below `0.5 deg/s` for the required `30 s` dwell and complete within `4,279 s`. Their final rotational energies are between `0.12%` and `1.63%` of their initial values. The validation uses a `0.02 s` fixed step; the applications default to `0.01 s`.
+
 ## Phase 7 — Custom 3U Spacecraft and Environment Visualization
 
-- [ ] Learn the minimal Blender workflow needed to create, name, and export components.
-- [ ] Create a dimensionally consistent generic 3U CubeSat model.
-- [ ] Place and name three orthogonal magnetorquer rods.
-- [ ] Add exterior coarse Sun sensors and an isolated magnetometer location.
-- [ ] Add four reaction-wheel placeholders in a pyramid arrangement.
-- [ ] Align the GLB origin, scale, and axes with the simulation body frame.
-- [ ] Keep component positions and orientations in simulation configuration rather than relying on the mesh as physics data.
-- [ ] Add solid, transparent, and cutaway rendering modes.
-- [ ] Visualize angular velocity, magnetic field, magnetic dipole, and torque with distinct vector arrows.
-- [ ] Credit any NASA textures or reference assets in a third-party attribution file.
+- [x] Learn the minimal Blender workflow needed to create, name, and export components.
+- [x] Create a dimensionally consistent generic 3U CubeSat model.
+- [x] Place and name three orthogonal magnetorquer rods.
+- [x] Add exterior coarse Sun sensors and an isolated magnetometer location.
+- [x] Add four reaction-wheel placeholders in a pyramid arrangement.
+- [x] Align the GLB origin, scale, and axes with the simulation body frame.
+- [x] Keep component positions and orientations in simulation configuration rather than relying on the mesh as physics data.
+- [x] Add solid, transparent, and cutaway rendering modes.
+- [x] Visualize angular velocity, magnetic field, magnetic dipole, and torque with distinct vector arrows.
+- [x] Credit any NASA textures or reference assets in a third-party attribution file.
 
 Validation gate:
 
-- [ ] Every visual component and vector agrees with the configured body-frame orientation.
+- [x] Every visual component and vector agrees with the configured body-frame orientation.
+
+Validation status: the reproducible Blender generator checks the body-frame origin, named components, dimensions, and long `+Z` axis before export. C++ tests verify the 3U dimensions, orthogonal magnetorquers, outward sensor normals, normalized reaction-wheel pyramid axes, and body-to-inertial component transformation. The viewer loads the custom GLB at its authored meter scale and reports bounds of `0.1153 x 0.1045 x 0.3445 m`, including exterior sensors and the magnetometer boom.
 
 ## Phase 8 — Sun Environment and Sensors
 
-- [ ] Implement a simplified inertial Sun direction.
-- [ ] Implement Earth-occultation logic for eclipse detection.
-- [ ] Implement a three-axis gyroscope interface with a configurable sample rate.
-- [ ] Implement coarse Sun sensors using face normals, field of view, and illumination.
-- [ ] Produce no valid Sun measurement during eclipse.
-- [ ] Add Sun direction, sensor visibility, and eclipse state to telemetry.
-- [ ] Render Earth, sunlight direction, orbit path, eclipse state, and an orbital overview camera.
-- [ ] Explain gyroscopes, coarse Sun sensors, sensor field of view, and eclipse in `docs/CONCEPTS.md`.
+- [x] Implement a simplified inertial Sun direction.
+- [x] Implement Earth-occultation logic for eclipse detection.
+- [x] Implement a three-axis gyroscope interface with a configurable sample rate.
+- [x] Implement coarse Sun sensors using face normals, field of view, and illumination.
+- [x] Produce no valid Sun measurement during eclipse.
+- [x] Add Sun direction, sensor visibility, and eclipse state to telemetry.
+- [x] Render Earth, sunlight direction, orbit path, eclipse state, and an orbital overview camera.
+- [x] Explain gyroscopes, coarse Sun sensors, sensor field of view, and eclipse in `docs/CONCEPTS.md`.
 
 Validation gate:
 
-- [ ] Sun-sensor readings agree with known spacecraft attitudes and disappear correctly during eclipse.
+- [x] Sun-sensor readings agree with known spacecraft attitudes and disappear correctly during eclipse.
+
+Validation status: known body-frame Sun directions activate the expected `+/-X`, `+/-Y`, and `+/-Z` sensors and reconstruct the original direction within floating-point tolerance. The default orbit is sunlit at its initial `+X` position and eclipsed half an orbit later behind Earth. The same orbital eclipse state removes the sensor array's valid Sun vector and sets all six illumination responses to zero.
 
 ## Phase 9 — Attitude Determination
 
-- [ ] Keep the true attitude inaccessible to the estimator and flight controller.
-- [ ] Implement TRIAD using measured magnetic-field and Sun vectors.
-- [ ] Detect and reject invalid or nearly parallel vector pairs.
-- [ ] Propagate the estimated quaternion between corrections using gyro measurements.
-- [ ] Add a simple tunable quaternion correction toward the TRIAD solution.
-- [ ] Continue gyro propagation without Sun corrections during eclipse.
-- [ ] Track attitude-estimation error using truth data available only to simulation telemetry.
-- [ ] Test known attitudes, slowly rotating cases, eclipse intervals, and invalid measurements.
-- [ ] Plot estimated-versus-true attitude error.
-- [ ] Explain attitude determination, TRIAD, gyro propagation, and sensor fusion in `docs/CONCEPTS.md`.
+- [x] Keep the true attitude inaccessible to the estimator and flight controller.
+- [x] Define standalone timestamped estimator inputs containing only sensor measurements and validity state.
+- [x] Define a standalone attitude-estimate output that does not depend on simulation or viewer types.
+- [x] Implement TRIAD using measured magnetic-field and Sun vectors.
+- [x] Detect and reject invalid or nearly parallel vector pairs.
+- [x] Propagate the estimated quaternion between corrections using gyro measurements.
+- [x] Add a simple tunable quaternion correction toward the TRIAD solution.
+- [x] Continue gyro propagation without Sun corrections during eclipse.
+- [x] Track attitude-estimation error using truth data available only to simulation telemetry.
+- [x] Test known attitudes, slowly rotating cases, eclipse intervals, and invalid measurements.
+- [x] Plot estimated-versus-true attitude error.
+- [x] Explain attitude determination, TRIAD, gyro propagation, and sensor fusion in `docs/CONCEPTS.md`.
 
 Validation gate:
 
-- [ ] With ideal sensors, the estimator converges to a documented attitude-error tolerance.
-- [ ] During a representative eclipse, estimation error remains bounded and recovers after Sun measurements return.
+- [x] With ideal sensors, the estimator converges to a documented attitude-error tolerance.
+- [x] During a representative eclipse, estimation error remains bounded and recovers after Sun measurements return.
+
+Validation status: TRIAD recovers known attitudes to within `1e-12 rad`, and the default `0.25` quaternion correction gain converges a slowly rotating ideal-sensor case below `1e-8 rad`. A ten-second simulated eclipse uses gyro-only propagation, remains below `1e-7 rad`, and returns below `1e-12 rad` on the first valid post-eclipse TRIAD update. The default seed-42 application run finishes with `0.000830 deg` estimated-versus-true attitude error.
 
 ## Phase 10 — Sun Acquisition with Ideal Control Torque
 
-- [ ] Choose and document the spacecraft face and body axis that point toward the Sun.
-- [ ] Compute a desired Sun-pointing quaternion while preserving a defined roll reference.
-- [ ] Compute quaternion attitude error with the shortest-rotation convention.
-- [ ] Implement a proportional-derivative attitude controller.
-- [ ] Apply the requested body torque directly before introducing reaction-wheel mechanics.
-- [ ] Add torque limits and anti-chatter behavior near the pointing target.
-- [ ] Define acquisition and steady-pointing error thresholds with dwell times.
-- [ ] Test large-angle commands, small-angle settling, and quaternion sign equivalence.
-- [ ] Explain quaternion error and PD attitude control in `docs/CONCEPTS.md`.
+- [x] Choose and document the spacecraft face and body axis that point toward the Sun.
+- [x] Keep the pointing controller interface limited to estimated attitude, measured rate, desired attitude, and validated configuration.
+- [x] Store controller gains, limits, thresholds, and dwell settings in one validated structure.
+- [x] Compute a desired Sun-pointing quaternion while preserving a defined roll reference.
+- [x] Compute quaternion attitude error with the shortest-rotation convention.
+- [x] Implement a proportional-derivative attitude controller.
+- [x] Apply the requested body torque directly before introducing reaction-wheel mechanics.
+- [x] Add torque limits and anti-chatter behavior near the pointing target.
+- [x] Define acquisition and steady-pointing error thresholds with dwell times.
+- [x] Test large-angle commands, small-angle settling, and quaternion sign equivalence.
+- [x] Explain quaternion error and PD attitude control in `docs/CONCEPTS.md`.
 
 Validation gate:
 
-- [ ] From several detumbled attitudes, ideal control torque acquires and maintains the Sun-pointing target without unstable oscillation.
+- [x] From several detumbled attitudes, ideal control torque acquires and maintains the Sun-pointing target without unstable oscillation.
+
+Validation status: three detumbled initial attitudes, including a `170 deg` case, settle below `0.25 deg` attitude error and `0.02 deg/s` rate within `180 s`. The seed-42 `6,000 s` application scenario completes B-dot detumbling, reaches steady Sun pointing, and finishes at `0.0668 deg` pointing error and `0.00922 deg/s` angular speed using the estimator rather than true attitude.
 
 ## Phase 11 — Four-Wheel Pyramid
 
-- [ ] Implement a general reaction-wheel cluster defined by wheel-axis vectors.
-- [ ] Validate the cluster first with three orthogonal wheels.
-- [ ] Configure four tilted wheels in a pyramidal arrangement.
-- [ ] Allocate requested body torque across the wheels using Eigen matrix operations.
-- [ ] Model equal and opposite spacecraft and wheel torques.
-- [ ] Integrate individual wheel speeds.
-- [ ] Enforce wheel torque and speed limits.
-- [ ] Report allocation error and saturation in telemetry.
-- [ ] Add optional single-wheel failure scenarios after nominal behavior works.
-- [ ] Animate wheel spin and highlight saturated or failed wheels in the cutaway view.
-- [ ] Explain reaction wheels, momentum exchange, allocation matrices, saturation, and redundancy in `docs/CONCEPTS.md`.
+- [x] Implement a general reaction-wheel cluster defined by wheel-axis vectors.
+- [x] Define standalone wheel-command and wheel-telemetry structures independent of the viewer.
+- [x] Validate the cluster first with three orthogonal wheels.
+- [x] Configure four tilted wheels in a pyramidal arrangement.
+- [x] Allocate requested body torque across the wheels using Eigen matrix operations.
+- [x] Model equal and opposite spacecraft and wheel torques.
+- [x] Integrate individual wheel speeds.
+- [x] Enforce wheel torque and speed limits.
+- [x] Report allocation error and saturation in telemetry.
+- [x] Add optional single-wheel failure scenarios after nominal behavior works.
+- [x] Animate wheel spin and highlight saturated or failed wheels in the cutaway view.
+- [x] Explain reaction wheels, momentum exchange, allocation matrices, saturation, and redundancy in `docs/CONCEPTS.md`.
 
 Validation gate:
 
-- [ ] The four-wheel cluster tracks achievable three-axis torque commands within tolerance.
-- [ ] The Sun-pointing controller remains stable using wheel-generated torque instead of ideal torque.
+- [x] The four-wheel cluster tracks achievable three-axis torque commands within tolerance.
+- [x] The Sun-pointing controller remains stable using wheel-generated torque instead of ideal torque.
+
+Validation status: orthogonal and four-wheel configurations reproduce achievable body-torque commands to within `1e-12 N m`. The four-wheel cluster retains three-axis allocation after one failed wheel and reports torque, speed, and allocation saturation. Three detumbled attitudes remain stable for `180 s` using only wheel-generated torque. The nominal seed-42 mission finishes with zero allocation error and all wheel speeds below the `6,000 rpm` limit.
 
 ## Phase 12 — Complete Autonomous Mission
 
-- [ ] Define `SUN_ACQUIRE`, `SUN_POINT`, and `SAFE` flight modes.
-- [ ] Transition automatically from deployment through detumble, acquisition, and pointing.
-- [ ] Add hysteresis and dwell times to every mode transition.
-- [ ] Define behavior when the Sun is unavailable during eclipse.
-- [ ] Define behavior when estimation becomes invalid.
-- [ ] Prevent controllers from issuing commands outside their active modes.
-- [ ] Record every mode transition and its reason.
-- [ ] Display the current mode and transition history in the viewer.
-- [ ] Add an end-to-end deterministic mission test.
+- [x] Define `SUN_ACQUIRE`, `SUN_POINT`, and `SAFE` flight modes.
+- [x] Transition automatically from deployment through detumble, acquisition, and pointing.
+- [x] Add hysteresis and dwell times to every mode transition.
+- [x] Define behavior when the Sun is unavailable during eclipse.
+- [x] Define behavior when estimation becomes invalid.
+- [x] Prevent controllers from issuing commands outside their active modes.
+- [x] Pass all actuator requests through one narrow command interface.
+- [x] Record every mode transition as a timestamped event containing the old mode, new mode, and reason.
+- [x] Display the current mode and transition history in the viewer.
+- [x] Add an end-to-end deterministic mission test.
 
 Validation gate:
 
-- [ ] A seeded mission autonomously detumbles, acquires the Sun when visible, and maintains Sun pointing without reading truth-state attitude.
+- [x] A seeded mission autonomously detumbles, acquires the Sun when visible, and maintains Sun pointing without reading truth-state attitude.
 
 Milestone result: the complete autonomous recovery and Sun-pointing mission.
 
+Validation status: the seed-42 `6,000 s` mission transitions `BOOT -> DETUMBLE -> SAFE -> SUN_ACQUIRE -> SUN_POINT`. It safely waits through eclipse, then finishes in steady Sun pointing at `0.0602 deg` estimated pointing error and `0.00912 deg/s` body rate. The estimator and controllers receive only timestamped sensor measurements and inertial reference vectors; true attitude is used only by the plant and validation score.
+
 ## Phase 13 — Sensor Realism and Robustness
 
-- [ ] Add configurable Gaussian noise to gyro, magnetometer, and Sun-sensor measurements.
-- [ ] Add reproducible per-run sensor biases.
-- [ ] Add sensor quantization and saturation where meaningful.
-- [ ] Tune estimator correction, B-dot filtering, and controllers using documented criteria.
-- [ ] Build a headless Monte Carlo runner for randomized attitude, body rates, orbit position, noise, and bias.
-- [ ] Define success, failure, detumble-time, acquisition-time, and pointing-error metrics.
-- [ ] Save aggregate results separately from per-run telemetry.
-- [ ] Investigate and document representative failed cases rather than hiding them.
-- [ ] Add regression seeds for important edge cases.
-- [ ] Explain sensor error, Monte Carlo testing, and robustness metrics in `docs/CONCEPTS.md`.
+- [x] Add configurable Gaussian noise to gyro, magnetometer, and Sun-sensor measurements.
+- [x] Add reproducible per-run sensor biases.
+- [x] Add sensor quantization and saturation where meaningful.
+- [x] Tune estimator correction, B-dot filtering, and controllers using documented criteria.
+- [x] Build a headless Monte Carlo runner for randomized attitude, body rates, orbit position, noise, and bias.
+- [x] Define success, failure, detumble-time, acquisition-time, and pointing-error metrics.
+- [x] Save aggregate results separately from per-run telemetry.
+- [x] Investigate and document representative failed cases rather than hiding them.
+- [x] Add regression seeds for important edge cases.
+- [x] Explain sensor error, Monte Carlo testing, and robustness metrics in `docs/CONCEPTS.md`.
 
 Validation gate:
 
-- [ ] The mission meets documented success-rate and pointing-performance targets across a documented scenario envelope.
+- [x] The mission meets documented success-rate and pointing-performance targets across a documented scenario envelope.
 
-## Phase 14 — Final Application and Portfolio Polish
+Validation status: the documented master-seed-2026 campaign passed `25/25` randomized `8,000 s` missions at a `0.02 s` step with `5` to `15 deg/s` initial tumble, randomized attitude and orbit phase, and seeded gyro, magnetometer, and coarse-Sun-sensor errors. Mean sunlit RMS true pointing error was `0.961 deg`, the worst per-run RMS was `1.908 deg`, maximum final rate was `0.0473 deg/s`, and no wheel speed-saturated. A six-candidate tuning comparison retained the established gains because every candidate passed and the pointing difference was below `0.009 deg`. Endpoint-in-eclipse false failures and a `0.05 s` step sensitivity failure set are documented in `docs/REFERENCE.md`; an eclipse-ending seed is locked into regression coverage.
 
-- [ ] Finalize close-up, cutaway, and orbital camera views.
-- [ ] Finalize telemetry plots, units, legends, colors, and vector-arrow scaling.
-- [ ] Add a concise scenario panel with seed, time, mode, rate, pointing error, eclipse state, and actuator status.
-- [ ] Support live runs and playback of recorded runs.
-- [ ] Add sensible default scenarios without turning the viewer into a large configuration editor.
-- [ ] Add keyboard and mouse help inside the application.
-- [ ] Verify clean builds on current macOS, Linux, and Windows environments.
-- [ ] Profile accelerated simulation and viewer performance.
+## Phase 14 — Finish the Application
+
+- [x] Finalize close-up, cutaway, and orbital camera views.
+- [x] Finalize telemetry plots, units, legends, colors, and vector-arrow scaling.
+- [x] Add a concise scenario panel with seed, time, mode, rate, pointing error, eclipse state, and actuator status.
+- [x] Support live runs and playback of recorded runs.
+- [x] Add sensible default scenarios without turning the viewer into a large configuration editor.
+- [x] Add keyboard and mouse help inside the application.
+- [ ] Verify clean native builds on current macOS, Linux, and Windows environments.
+- [x] Profile accelerated simulation and viewer performance.
+
+Application acceptance criteria:
+
+- [x] The application visibly progresses from tumble through detumble to stable Sun pointing.
+- [x] The viewer clearly distinguishes truth, measurements, estimates, and commands.
+- [x] Automated tests validate the main mathematical and physical assumptions.
+- [x] Monte Carlo results support the project's performance claims.
+
+Local validation status: debug and release builds are clean on macOS, all `102` tests pass, and a release `6,000 s` mission completes in about `0.54 s` on the development Mac. The viewer also reports rolling frame rate, fixed-step throughput, and physics real-time factor. The existing three-platform GitHub Actions run passed on 2026-08-25; the current application changes still require their post-push matrix run.
+
+## Phase 15 — Portfolio Documentation and Open-Source Release
+
 - [ ] Add screenshots, an architecture diagram, equations, validation results, and build instructions to the README.
 - [ ] Complete `docs/REFERENCE.md` with architecture, data flow, frames, units, models, assumptions, and configuration.
 - [ ] Add a third-party dependency and asset attribution file.
@@ -322,13 +369,9 @@ Validation gate:
 - [ ] Tag a reproducible release.
 - [ ] Make the GitHub repository public when it is ready to use as a portfolio project.
 
-Final acceptance criteria:
+Release acceptance criteria:
 
 - [ ] A new user can build and run a default mission using the documented commands.
-- [ ] The application visibly progresses from tumble through detumble to stable Sun pointing.
-- [ ] The viewer clearly distinguishes truth, measurements, estimates, and commands.
-- [ ] Automated tests validate the main mathematical and physical assumptions.
-- [ ] Monte Carlo results support the project's performance claims.
 - [ ] Every major approximation and limitation is documented and explainable.
 
 ## Optional Extensions After the Final Product
