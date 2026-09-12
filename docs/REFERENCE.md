@@ -4,7 +4,7 @@ This document is the canonical reference for Detumble's implemented architecture
 
 ## Current Status
 
-Phases 0 through 13 are complete, and the Phase 14 application feature set is implemented. Detumble now has a validated autonomous detumble and Sun-pointing mission with rigid-body attitude dynamics, deterministic initial conditions, a circular orbit, magnetic and Sun environments, seeded realistic sensor errors, eclipse detection, TRIAD attitude determination with gyro propagation, saturated magnetorquers, quaternion PD pointing control, a four-reaction-wheel pyramid, autonomous flight modes, configurable headless CSV runs, Monte Carlo robustness analysis, and a desktop viewer driven by the same simulation core. The viewer uses a custom, dimensionally consistent 3U model with configuration-driven ADCS component locations, environment overlays, scenario presets, recorded-state replay, and in-application guidance. The current application changes still need to be exercised by the three-platform CI job after they are pushed.
+Phases 0 through 13 are complete, and the Phase 14 application feature set is implemented. Detumble now has a validated autonomous detumble and Sun-pointing mission with rigid-body attitude dynamics, deterministic initial conditions, a circular orbit, magnetic and Sun environments, seeded realistic sensor errors, eclipse detection, TRIAD attitude determination with gyro propagation, saturated magnetorquers, quaternion PD pointing control, a four-reaction-wheel pyramid, autonomous flight modes, configurable headless CSV runs, Monte Carlo robustness analysis, and a desktop viewer driven by the same simulation core. The viewer uses a custom, dimensionally consistent 3U model with configuration-driven ADCS component locations, environment overlays, deterministic scenario presets, and in-application guidance. The current application changes still need to be exercised by the three-platform CI job after they are pushed.
 
 ## Repository Layout
 
@@ -13,16 +13,17 @@ apps/                   Application entry points
   cli_main.cpp          Headless simulator entry point
   monte_carlo_main.cpp  Headless randomized validation campaign
   viewer_main.cpp       Desktop viewer entry point
-assets/models/          Runtime and attributed reference 3D assets
+assets/models/          Project-authored runtime 3D asset
 assets/scripts/         Reproducible 3D-asset generation scripts
 cmake/                  Shared CMake helpers
 docs/
+  media/                Portfolio screenshot and mission demo
   PLAN.md               Sequential development roadmap
   REFERENCE.md          Canonical repository reference
 include/detumble/       Public C++ headers
 src/                    Simulation library implementation
 tests/                  Unit and integration tests
-THIRD_PARTY.md          External asset attribution and modifications
+THIRD_PARTY.md          Dependency and asset provenance notes
 .github/workflows/      Cross-platform continuous integration
 ```
 
@@ -37,7 +38,7 @@ Targets:
 - `detumble_core` is the rendering-independent static library. Other targets may access it through the `detumble::core` alias.
 - `detumble_cli` is the headless executable and is emitted with the filename `detumble`.
 - `detumble_monte_carlo` runs randomized native-backend mission campaigns and writes per-run and aggregate metrics.
-- `detumble_viewer` is the raylib desktop viewer with Dear ImGui controls and ImPlot telemetry.
+- `detumble_viewer` is the raylib desktop viewer with Dear ImGui controls, status, and mission progress.
 - `detumble_tests` contains tests discovered and run through CTest.
 
 The simulation core must never depend on viewer or user-interface code. The CLI and viewer may both link to the core.
@@ -50,10 +51,9 @@ Dependencies are fetched by CMake and pinned to release archives and SHA-256 has
 - Catch2 3.15.3 provides the test framework and CTest discovery.
 - raylib 6.0 provides the desktop window, camera, rendering, input, and GLB loader.
 - Dear ImGui 1.92.7 provides immediate-mode viewer controls.
-- ImPlot 1.0 provides live telemetry plots.
 - rlImGui commit `3bc5731c4216bb8caa67fbea24aa85ce80d57ccb` bridges raylib 6.0 and Dear ImGui 1.92.7.
 
-Visualization dependencies are only fetched when `DETUMBLE_BUILD_VIEWER` is enabled. Dear ImGui, ImPlot, and rlImGui do not provide the CMake targets needed here, so Detumble defines small static-library targets from their official source files. Third-party targets do not inherit Detumble's project-warning policy.
+Visualization dependencies are only fetched when `DETUMBLE_BUILD_VIEWER` is enabled. Dear ImGui and rlImGui do not provide the CMake targets needed here, so Detumble defines small static-library targets from their official source files. Third-party targets do not inherit Detumble's project-warning policy.
 
 ## Compiler Policy
 
@@ -394,7 +394,7 @@ Detumble completes when measured angular-speed magnitude remains at or below `0.
 
 ## Desired Sun-Pointing Attitude
 
-The selected Sun-pointing face is the forward `+Z` end of the 3U spacecraft. The desired attitude maps body `+Z` onto the inertial direction toward the Sun. Pointing one axis leaves roll undefined, so body `+X` is also aligned with the projection of inertial `+Z` onto the plane perpendicular to the Sun. The default fixed inertial `+X` Sun direction is not parallel to this roll reference.
+The selected Sun-pointing direction is the normalized body vector `[1, 1, 0]`, halfway between the `+X` and `+Y` long-side solar arrays. The desired attitude maps this power axis onto the inertial direction toward the Sun, illuminating both adjacent arrays at about `0.707` projected area each. That provides about `1.414` times the ideal projected area of pointing one equal-size side array directly at the Sun. Pointing one axis leaves roll undefined, so the spacecraft's long body `+Z` axis is also aligned with the projection of inertial `+Z` onto the plane perpendicular to the Sun. The default fixed inertial `+X` Sun direction is not parallel to this roll reference. The simulation does not yet calculate electrical power.
 
 `desired_sun_pointing_attitude` builds orthonormal body and inertial bases from these two axis definitions and converts their rotation matrix to the project's body-to-inertial quaternion convention. Body pointing and roll axes must be orthogonal, finite, and nonzero.
 
@@ -408,7 +408,7 @@ The error quaternion is `estimated.conjugate() * desired`. Its sign is selected 
 torque_body = Kp * attitude_error_body - Kd * measured_rate_body
 ```
 
-Default per-axis proportional gains are `0.0015 N m/rad`. Derivative gains are `[0.016, 0.016, 0.0065] N m s/rad`, reflecting the lower inertia about the long body `Z` axis. Each requested body-torque component is limited to `+/-0.001 N m` before wheel allocation. Torque becomes zero inside both the `0.1 deg` attitude and `0.01 deg/s` rate deadbands to avoid command chatter.
+Default per-axis proportional gains are `0.0015 N m/rad`. Derivative gains are `[0.016, 0.016, 0.0065] N m s/rad`, reflecting the lower inertia about the long body `Z` axis. Each requested body-torque component is limited to `+/-0.00002 N m` in `SUN_ACQUIRE`, producing a slower visible slew, and `+/-0.001 N m` in `SUN_POINT`, retaining enough authority for accurate tracking. These are flight-software limits on the same physical wheel cluster; the viewer never changes simulation speed automatically. Torque becomes zero inside both the `0.1 deg` attitude and `0.01 deg/s` rate deadbands to avoid command chatter.
 
 The same `SunPointingControllerConfig` stores gains, limits, deadbands, tracking thresholds, hysteresis, and dwell in one validated structure. `SunPointingTracker` separately applies the acquisition and steady-pointing timing: the acquisition threshold is `10 deg`, steady threshold is `2 deg`, hysteresis is `2 deg`, and dwell is `10 s`. Keeping timing logic separate leaves the PD command function deterministic and easy to test.
 
@@ -487,7 +487,7 @@ Known ideal TRIAD cases recover body-to-inertial attitude within `1e-12 rad`. A 
 
 Three initially detumbled attitudes, including a `170 deg` error, are propagated for `180 s` with reaction-wheel torque. Each finishes below `0.25 deg` attitude error and `0.02 deg/s` body rate without unstable oscillation. Orthogonal and four-wheel allocations reproduce achievable body torque to within `1e-12 N m`; the pyramid also retains exact small-command allocation after one failed wheel.
 
-With the realistic sensor profile, the default seed-42 `6,000 s` mission records four deterministic transitions: `BOOT -> DETUMBLE` at `0.2 s`, `DETUMBLE -> SAFE` at `2,107.2 s` because detumble completes during eclipse, `SAFE -> SUN_ACQUIRE` at `3,906.9 s` after Sun and attitude availability recover, and `SUN_ACQUIRE -> SUN_POINT` at `3,944.4 s`. It finishes in steady pointing at `0.517 deg` estimated pointing error, `0.0108 deg/s` true body rate, `1.300 deg` estimate-versus-truth error, negligible final wheel-allocation error, and a peak wheel speed of `5,623 rpm` below the `6,000 rpm` limit. The ideal profile remains available for zero-error comparisons.
+With the realistic sensor profile, the default seed-42 `6,000 s` mission records four deterministic transitions: `BOOT -> DETUMBLE` at `0.2 s`, `DETUMBLE -> SAFE` at `2,107.2 s` because detumble completes during eclipse, `SAFE -> SUN_ACQUIRE` at `3,906.9 s` after Sun and attitude availability recover, and `SUN_ACQUIRE -> SUN_POINT` at `4,120.4 s`. It finishes in steady pointing at `0.385 deg` estimated pointing error, `0.0132 deg/s` true body rate, `2.032 deg` estimate-versus-truth error, negligible final wheel-allocation error, and a peak wheel speed of `979 rpm` below the `6,000 rpm` limit. The ideal profile remains available for zero-error comparisons.
 
 ## Current CLI Scenario
 
@@ -508,7 +508,7 @@ Options are `--duration`, `--time-step`, `--seed`, `--initial-rate-deg-s`, `--se
 
 The validated envelope uses `25` runs, master seed `2026`, an `8,000 s` duration, a `0.02 s` fixed step, the `500 km` and `51.6 deg` circular orbit, the realistic sensor profile above, and the nominal healthy actuator configuration. A run succeeds when it detumbles, acquires the Sun, reaches steady pointing, finishes below `0.1 deg/s`, and has no more than `2 deg` RMS true Sun-pointing error while sunlit in `SUN_POINT`. Ending in eclipse and `SAFE` is allowed after those achievements because no valid Sun measurement exists then.
 
-The Phase 13 campaign observed `25/25` successes. Mean detumble time was `4,055.08 s`, the slowest detumble was `5,468.24 s`, the latest first acquisition was `6,320.34 s`, mean sunlit RMS true pointing error was `0.961 deg`, worst per-run RMS was `1.908 deg`, maximum final body rate was `0.0473 deg/s`, and no wheel reached speed saturation.
+The current two-panel power-axis campaign with gentle acquisition torque observed `25/25` successes. Mean detumble time was `4,055.08 s`, the slowest detumble was `5,468.24 s`, the latest first acquisition was `6,365.34 s`, mean sunlit RMS true pointing error was `0.922 deg`, worst per-run RMS was `1.555 deg`, and maximum final body rate was `0.0314 deg/s`. The maximum wheel speed was `1,557 rpm`; no wheel reached the `6,000 rpm` limit.
 
 The tuning campaign replayed the first `15` scenarios while comparing attitude correction gains `0.10`, `0.25`, and `0.50`, B-dot filter time constants `0.20 s` and `0.50 s`, and pointing gain scales `0.75`, `1.0`, and `1.25`. All candidates passed. Their mean RMS pointing errors differed by less than `0.009 deg`, and the `0.20 s` B-dot filter detumbled about `1.6 s` sooner than `0.50 s`. The project therefore retains the established `0.25` correction gain, `0.20 s` B-dot filter, and unscaled PD gains instead of overfitting this small campaign.
 
@@ -527,32 +527,22 @@ Run the documented campaign with:
 
 ## Desktop Viewer
 
-The viewer uses raylib for its resizable desktop window, camera, input, rendering, and GLB loading. Dear ImGui provides the simulation panel, and ImPlot displays tabbed telemetry histories.
+The viewer uses raylib for its resizable desktop window, camera, input, rendering, and GLB loading. Dear ImGui provides the compact controls, status, actuator schematic, and context-aware mission-progress gauge.
 
 Viewer behavior:
 
-- The nominal scenario begins at exactly `10 deg/s` from seed `42`, uses realistic sensors and automatic B-dot control, and defaults to `50x` simulation speed. Gentle `5 deg/s` and fast `15 deg/s` seeded presets cover the design envelope without exposing a large configuration editor.
-- Pause/resume, reset, single-step, and logarithmic `0.1x` to `100x` simulation-speed controls are available.
-- The viewer records display snapshots at `10 Hz`. Replay starts from the beginning of the current run, supports pause/resume, a frame scrubber, and `0.1x` to `100x` replay speed, and never rewinds or changes the authoritative live simulation state. Returning to live resumes from the latest simulated state.
-- Dedicated close-up, cutaway, and orbital buttons reset the camera to useful compositions. `C`, `X`, and `O` select them; right-mouse dragging changes camera azimuth and elevation, and the mouse wheel changes distance.
-- The default presentation is intentionally sparse: compact controls and mission status remain visible, while telemetry and engineering diagnostics are opt-in. `T` opens the bottom-anchored responsive telemetry drawer, and `D` opens the magnetic-actuator and reaction-wheel panels. Detailed mission state, performance, rendering choices, and vector controls remain available through collapsed sections.
-- Red, green, and blue arrows show the body `+X`, `+Y`, and `+Z` axes.
-- Orange and yellow arrows show normalized angular velocity and local magnetic-field directions. A gold arrow shows the direction toward the Sun. Magenta and cyan arrows show the saturation-limited magnetic-dipole command and total applied control torque. These actuator arrows are scaled against their respective configured limits, hide below two percent of the limit, and use a short display-only low-pass filter so sensor noise and one-step magnetometer blanking do not appear as full-length reversals. The filter never changes simulation state, actuator commands, physics, or recorded telemetry.
-- Close-up mode keeps the solid spacecraft at the display origin. Cutaway mode uses a closer component-focused camera. Orbit-overview mode shows a scaled Earth, its cylindrical shadow, a Sun marker, the inclined orbit path, and the spacecraft's current orbital position.
-- Body axes, each physical-vector overlay, and the orbit path can be shown or hidden independently. Only angular velocity and Sun direction are enabled in the clean default view. Body axes, magnetic field, and the rapidly changing dipole-command and applied-torque arrows remain available as educational or diagnostic overlays.
-- Solid mode draws the complete custom GLB. Transparent mode reveals opaque configuration-driven component overlays through a faded shell. Cutaway mode hides the shell and draws the configured body outline, three magnetorquers, six coarse Sun sensors, isolated magnetometer, and four-wheel pyramid.
-- Coarse Sun sensor markers are gold when illuminated, dark cyan when not viewing the Sun, and gray during eclipse. The viewer reports `SUNLIT` or `ECLIPSE` continuously.
-- The magnetic-actuator panel can switch between automatic B-dot output and manual body `X`, `Y`, and `Z` dipole commands for diagnostics. It displays mission and detumble state, measured gyro speed, threshold and dwell progress, filtered B-dot, configured limits, the stable saturation-limited target, nominal torque between samples, and sample timing.
-- The 3U outline and axis endpoints are produced with `rotate_body_to_inertial`, the same helper covered by frame-convention tests.
-- A compact scenario-status panel continuously reports live versus replay state, backend, preset and seed, simulation time, flight mode, body-rate magnitude, Sun-pointing error, eclipse state, actuator group, and navigation validity.
-- The simulation panel reports autonomous mode and elapsed time, timestamped transition history and reasons, estimator validity, current TRIAD correction status, estimated-versus-true error, Sun acquisition state, pointing error, controller-limited wheel request, and saturation. Truth attitude is used only for the displayed error score.
-- The reaction-wheel panel displays requested and applied body torque, allocation error, each wheel's speed and motor torque, and interactive single-wheel failure toggles. Wheel markers rotate from integrated wheel angle and turn gold when limited or red when failed in transparent and cutaway views.
-- Telemetry tabs display body rates in `deg/s`, rotational energy, autonomous flight mode and detumble completion, inertial position, body-frame magnetic field in microtesla, Sun-sensor response and validity, eclipse state, attitude-estimation error, Sun-pointing error and applied wheel torque, wheel speeds and motor torque, quaternion norm error, and requested versus saturation-limited magnetorquer dipoles. Rate and magnetic-field plots pair thick truth traces with thin, same-color sensor traces; attitude and actuator tabs identify estimates and commands explicitly. Viewer telemetry is sampled at `10 Hz` and keeps 30 to 40 seconds of plot history, which is sufficient for the 30-second plot window and keeps ImGui draw lists below their 16-bit vertex limit. This display sampling does not change the `0.01 s` physics step. The magnetorquer plot deliberately omits one-step coil-blanking pulses; the core still records and applies them to the physics.
-- Pressing `H` opens a concise keyboard, mouse, and telemetry-semantics reference. `Space` pauses or resumes the active live or replay timeline, `R` resets the selected scenario, and `T` and `D` toggle telemetry and diagnostics.
-- A rolling performance section reports viewer frames per second, fixed simulation steps per second, and physics real-time factor over half-second wall-time windows. On the development Mac, an optimized headless `6,000 s`, `0.01 s` mission completed in about `0.54 s`; this is a local profiling observation, not a cross-platform performance guarantee.
+- The nominal scenario begins at exactly `10 deg/s` from seed `42`, uses realistic sensors and automatic B-dot control, and defaults to `50x` simulation speed. Gentle `5 deg/s` and fast `15 deg/s` seeded presets cover the design envelope without exposing a large configuration editor. Sun acquisition is intentionally slower because flight software limits reaction-wheel torque during the slew; the viewer always honors the requested playback speed.
+- A compact control panel provides pause/resume, reset, scenario selection, logarithmic `0.1x` to `100x` speed control, camera reset, and help. Single-step and replay controls are intentionally omitted from the final presentation UI.
+- One consolidated mission-status panel reports flight mode, seed, whole-second simulation time, sunlight availability, and the active actuator group. It also contains the current goal gauge and spacecraft-internals schematic. Scenario selection remains only in Controls.
+- The viewer displays only the current live simulation state. Because each scenario and sensor sequence is deterministic, Reset reproduces a run without maintaining a separate replay buffer or frame-scrubbing interface.
+- The viewer has one orbital presentation. `O` smoothly resets the camera; right-mouse dragging changes azimuth and elevation, and the mouse wheel changes distance.
+- The orbit scene shows a simple blue Earth with a transparent wireframe shell, an unlabeled bright-orange Sun marker, inclined orbit path, fading recent-position trail, deterministic starfield, and the current spacecraft position and attitude. Sunlight state appears only in Mission status; the eclipse volume and diagnostic vectors are intentionally not rendered.
+- The complete custom GLB is drawn in solid mode. Coarse Sun-sensor markers are orange when illuminated, dark cyan when not viewing the Sun, and gray during eclipse. The viewer reports `SUNLIT` or `ECLIPSE` continuously.
+- The mission-progress gauge uses the current displayed state rather than a time-history plot. It shows the remaining angular-speed or pointing-error magnitude, shrinking toward zero as the spacecraft approaches its goal. Pointing error uses a `0` to `10 deg` presentation scale so sub-degree behavior remains visible. The two-decimal readout is low-pass filtered and refreshed at `4 Hz` to prevent realistic sensor jitter from becoming unreadable; this display filtering never feeds back into control. During eclipse it says that the sensors are waiting to detect the Sun. Once steady pointing meets its dwell requirement, a mission-goal-achieved message remains latched until Reset or scenario selection.
+- The spacecraft-internals section uses two adjacent subsystem cards so the actuators do not overlap. The magnetorquer card retains the configuration-defined rod locations inside a 3U outline. The reaction-wheel card separates the four configured wheel axes into a clear two-by-two top view; individual wheel labels are unnecessary. Rod brightness follows the limited dipole command with a short visual fade, avoiding coil-blanking flicker. Wheel spokes use simulated speed direction and magnitude but cap their display speed to prevent aliasing at accelerated playback. The exploded presentation does not alter actuator physics or configuration.
+- `Space` pauses or resumes, `R` resets, `O` resets the camera, and `H` opens concise help.
 
-The Earth, orbit, spacecraft, and vector arrows use deliberately different display scales so all remain visible together. Viewer scale never changes the physical values returned by the core.
-
+The Earth, orbital altitude, spacecraft, and Sun marker use deliberately different display scales so all remain visible together. These presentation choices never change physical simulation values.
 Rendering time never enters the equations of motion. Each display frame contributes wall time multiplied by playback speed to an accumulator. The viewer repeatedly calls `Simulation::step()` while at least one complete `0.01 s` interval is due. Display frame rate can change how smooth the motion looks, but it cannot change the sequence of simulated states.
 
 The determinism test advances one simulation continuously and another in uneven viewer-like batches. Their final attitude, angular velocity, and elapsed time match exactly after 1,000 steps.
@@ -569,7 +559,7 @@ The generator uses meters, keeps the body-frame origin at the modeled center of 
 
 The C++ component configurations are authoritative. `SpacecraftVisualConfig` defines the `0.10 x 0.10 x 0.34 m` body, three orthogonal magnetorquer rods, sensor locations, an isolated `+X` magnetometer location, and four reaction wheels with normalized pyramid axes. Coarse Sun sensor names and outward normals come from the same definitions used by `IdealCoarseSunSensorArray`. The viewer transforms these body-frame locations and directions using the tested `rotate_body_to_inertial` helper. The Blender script mirrors this configuration only to create the visible mesh; neither the GLB nor the visual configuration changes mass properties or dynamics.
 
-The NASA 1 RU assets used by the Phase 3 prototype remain under `assets/models/` as attributed development references but are no longer copied or loaded at runtime. Their source and conversion remain documented in `THIRD_PARTY.md`.
+The temporary NASA model used during the first viewer prototype has been removed. The shipped GLB contains only project-authored geometry and materials, which avoids carrying an unused runtime asset or implying that its geometry defines the simulation.
 
 ## Build Commands
 

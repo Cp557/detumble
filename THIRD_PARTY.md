@@ -1,16 +1,15 @@
-# Third-Party Assets
+# Third-Party Software and Assets
 
-## NASA Generic CubeSat 1 RU
+Detumble's source code and generated 3U spacecraft model are project-authored. No third-party model or texture is included in the runtime application.
 
-The Phase 3 viewer used NASA's **CubeSat - 1 RU Generic** model as a temporary visualization asset:
+CMake downloads pinned copies of these dependencies during configuration:
 
-- Source: [NASA Science 3D Resources](https://science.nasa.gov/3d-resources/cubesat-1-ru-generic/)
-- Creator credited by NASA: Christopher R. Meaney
-- Original file: `assets/models/cubesat_1u_nasa.glb`
-- Uncompressed development copy: `assets/models/cubesat_1u_nasa_uncompressed.glb`
+| Dependency | Purpose | License |
+| --- | --- | --- |
+| Eigen 5.0.1 | Vectors, matrices, quaternions, and decompositions | MPL 2.0 and compatible licenses |
+| Catch2 3.15.3 | Unit and integration testing | Boost Software License 1.0 |
+| raylib 6.0 | Windowing, input, 3D rendering, and GLB loading | zlib/libpng |
+| Dear ImGui 1.92.7 | Desktop user interface | MIT |
+| rlImGui `3bc5731` | raylib and Dear ImGui integration | zlib/libpng |
 
-The source GLB uses Draco mesh compression, which raylib 6.0 does not decode. The viewer copy was produced with glTF Transform CLI 4.2.1's lossless `copy` command to remove that compression. Its geometry and materials were otherwise left unchanged.
-
-These assets remain in the repository as attributed development references. The Phase 7 viewer no longer copies, loads, or renders them. Its custom `detumble_3u.glb` is generated entirely from project-authored Blender primitives and materials and does not use NASA geometry or textures. Neither asset defines the simulation's mass properties, dimensions, component positions, or body-frame convention.
-
-Use and redistribution of NASA media remain subject to the [NASA Media Usage Guidelines](https://www.nasa.gov/nasa-brand-center/images-and-media/).
+Their complete license texts are included in the source archives fetched by CMake. The generated `assets/models/detumble_3u.glb` is produced from Blender primitives by `assets/scripts/create_detumble_3u.py` and contains no external geometry or textures.

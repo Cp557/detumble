@@ -1,72 +1,119 @@
 # Detumble
 
-Detumble is a C++ spacecraft attitude-control simulation focused on autonomous CubeSat recovery after deployment or an attitude-control failure.
+[![CI](https://github.com/Cp557/detumble/actions/workflows/ci.yml/badge.svg)](https://github.com/Cp557/detumble/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C.svg)](https://en.cppreference.com/w/cpp/20)
 
-The simulated CubeSat begins in Low Earth Orbit with a randomized 3-axis tumble. Its flight software must autonomously reduce its angular velocity, stabilize the spacecraft, acquire the Sun, and eventually maintain a Sun-pointing attitude.
+Detumble is a cross-platform C++ simulation of a 3U CubeSat autonomously recovering from an uncontrolled tumble in Low Earth Orbit. It models the spacecraft's rotational physics, sensors, actuators, attitude estimation, flight modes, and closed-loop control, then presents the mission in a focused desktop visualization.
 
-## Core Goals
+![Detumble mission demonstration](docs/media/detumble-demo.gif)
 
-* Model 3D rigid-body rotational dynamics in C++
-* Represent spacecraft attitude using quaternions
-* Simulate randomized initial angular velocity and orientation
-* Implement autonomous detumbling using magnetorquers
-* Model Earth's magnetic field sufficiently for B-dot control
-* Implement a B-dot detumble controller
-* Track angular velocity, attitude, actuator commands, and control modes
-* Visualize the spacecraft's attitude and recovery process
-* Add reaction-wheel-based Sun pointing after successful detumbling
+[Download the higher-quality MP4 demo](docs/media/detumble-demo.mp4).
 
-## Initial Mission Scenario
+## Mission
 
-The spacecraft is a small CubeSat in an approximately 500 km circular Low Earth Orbit around Earth.
+The spacecraft begins in a 500 km circular orbit with a randomized attitude and three-axis tumble. Its onboard-style flight software then:
 
-The initial recovery sequence is:
+1. samples a gyroscope and Earth's magnetic field;
+2. uses B-dot control and three magnetorquers to reduce the tumble;
+3. waits safely when the Sun is hidden by Earth;
+4. estimates attitude using TRIAD with gyroscope propagation;
+5. acquires the Sun with a four-wheel pyramid; and
+6. holds two body-mounted solar arrays toward the Sun.
 
-1. CubeSat begins with an uncontrolled 3-axis tumble
-2. Magnetometer measures Earth's magnetic field
-3. B-dot controller commands the magnetorquers
-4. Angular velocity is reduced below a defined threshold
-5. TRIAD and gyroscope measurements estimate spacecraft attitude
-6. A quaternion PD controller requests Sun-pointing torque
-7. A four-wheel pyramid exchanges angular momentum with the spacecraft
-8. Autonomous flight modes wait safely through eclipse, acquire the Sun, and maintain pointing
+```mermaid
+flowchart LR
+    Environment[Orbit, magnetic field,<br/>Sun and eclipse]
+    Truth[Rigid-body state<br/>RK4 propagation]
+    Sensors[Gyroscope, magnetometer<br/>and coarse Sun sensors]
+    FSW[Estimator and<br/>autonomous flight modes]
+    Control[B-dot and quaternion<br/>PD controllers]
+    Actuators[Magnetorquers and<br/>four reaction wheels]
 
-## Scope
+    Truth --> Sensors
+    Environment --> Sensors
+    Sensors --> FSW
+    FSW --> Control
+    Control --> Actuators
+    Actuators -->|applied torque| Truth
+    Environment --> Truth
+```
 
-This is not intended to become a general-purpose spacecraft simulator.
+Truth attitude is private to the simulation plant. The estimator and controllers receive only timestamped simulated measurements and inertial reference vectors.
 
-The project should remain focused on:
+## What Is Modeled
 
-* attitude dynamics
-* spacecraft control
-* sensors and actuators
-* autonomous mode transitions
-* environmental effects relevant to ADCS
+- Coupled three-axis rigid-body rotation with quaternion attitude
+- Fixed-step fourth-order Runge–Kutta integration
+- A simplified 500 km, 51.6-degree circular orbit
+- Tilted-dipole Earth magnetic field and cylindrical eclipse geometry
+- Seeded sensor bias, Gaussian noise, quantization, saturation, sample rates, and field of view
+- Magnetometer sampling with magnetorquer coil blanking
+- Saturated B-dot magnetic detumbling
+- TRIAD attitude determination with gyroscope propagation and correction
+- Quaternion PD Sun-pointing control
+- Four reaction wheels in a redundant pyramid with torque, speed, and failure limits
+- Autonomous `BOOT`, `DETUMBLE`, `SAFE`, `SUN_ACQUIRE`, and `SUN_POINT` modes
+- Headless CSV runs and randomized Monte Carlo validation
 
-Orbital mechanics should only be modeled to the level necessary to provide the spacecraft's position and surrounding environment.
+## Control System
 
-## Development Philosophy
+The attitude plant follows Euler's rigid-body equation:
 
-Build incrementally and validate the physics at each stage.
+$$I\dot{\omega} + \omega \times (I\omega) = \tau$$
 
-The first milestone is intentionally narrow:
+During detumbling, the magnetic controller commands a dipole opposite the measured field change:
 
-> Given a CubeSat with randomized initial attitude and angular velocity, use a C++ attitude simulation and B-dot controller to reduce its body rates below a defined detumble threshold.
+$$m = -k\,\frac{dB_{body}}{dt}, \qquad \tau_{mag} = m \times B$$
 
-The validated project now includes visualization, realistic seeded sensor errors, attitude estimation, reaction-wheel Sun pointing, eclipse-safe autonomous modes, timestamped mode events, and Monte Carlo robustness analysis. Additional physical disturbances and broader fault recovery remain later layers.
+After detumbling, a quaternion PD controller requests reaction-wheel torque:
 
-## Development
+$$\tau_{body} = K_p e_q - K_d\omega$$
 
-Detumble requires a C++20 compiler, CMake 3.25 or newer, and Ninja. CMake downloads the pinned math, testing, rendering, and user-interface dependencies during the first configuration.
+`SUN_ACQUIRE` deliberately uses a lower torque limit so the slew is gentle. `SUN_POINT` restores normal control authority for accurate tracking. Accelerating each internal wheel produces equal and opposite torque on the spacecraft body.
 
-On Debian or Ubuntu, install raylib's desktop build prerequisites first:
+## Desktop Viewer
+
+The raylib and Dear ImGui viewer shows the simulated Earth, orbit, Sun, spacecraft attitude, current flight mode, mission goal, and animated actuator internals. The spacecraft is a project-authored 3U GLB generated reproducibly with Blender; component locations remain configuration-driven in C++.
+
+![Detumble desktop viewer](docs/media/detumble-viewer.png)
+
+The viewer uses the same simulation core as the headless tools. Rendering rate and playback speed never change the fixed physical timestep or the sequence of simulated states.
+
+## Validation
+
+The project currently has 103 automated unit and integration tests. They cover frame conventions, quaternion math, dynamics conservation, environment geometry, sensor scheduling and errors, control laws, attitude estimation, actuator allocation, autonomous transitions, deterministic replay, and end-to-end missions.
+
+The documented 25-case Monte Carlo campaign randomizes initial attitude, tumble axis, angular speed from 5 to 15 deg/s, orbit position, and realistic sensor errors.
+
+| Result | Value |
+| --- | ---: |
+| Successful missions | 25 / 25 |
+| Mean detumble time | 4,055 s |
+| Mean sunlit RMS pointing error | 0.922 deg |
+| Worst per-run RMS pointing error | 1.555 deg |
+| Maximum final angular speed | 0.0314 deg/s |
+| Maximum wheel speed | 1,557 rpm / 6,000 rpm |
+
+For the default seed-42 mission, the spacecraft safely waits through eclipse, takes about 214 simulated seconds to slew toward the Sun, and finishes with 0.385 degrees of estimated pointing error.
+
+## Build and Run
+
+Requirements:
+
+- C++20 compiler
+- CMake 3.25 or newer
+- Ninja
+- Internet access during the first CMake configuration
+
+On Debian or Ubuntu, first install raylib's desktop prerequisites:
 
 ```bash
 sudo apt-get install libasound2-dev libgl1-mesa-dev libx11-dev \
   libxcursor-dev libxi-dev libxinerama-dev libxrandr-dev
 ```
 
-Configure, build, and test the debug preset:
+Configure, build, and test:
 
 ```bash
 cmake --preset debug
@@ -74,48 +121,56 @@ cmake --build --preset debug
 ctest --preset debug
 ```
 
-Run the autonomous detumble/Sun-pointing simulation and live desktop viewer:
+Launch the viewer:
 
 ```bash
-./build/debug/detumble
 ./build/debug/detumble_viewer
 ```
 
-The applications use reproducible sensor noise, per-run bias, quantization, and saturation by default. Use `--sensor-profile ideal` with the CLI when comparing against the zero-error mathematical baseline.
-
-Configure a headless run and export full-rate telemetry with:
+Run the same mission headlessly and export full-rate telemetry:
 
 ```bash
 ./build/debug/detumble --duration 6000 --time-step 0.01 \
-  --seed 42 --initial-rate-deg-s 10 --output runs/detumble.csv
+  --seed 42 --initial-rate-deg-s 10 \
+  --sensor-profile realistic --output runs/detumble.csv
 ```
 
-The viewer starts the same deterministic tumbling 3U CubeSat in a simplified 500 km orbit. B-dot magnetorquers detumble it, TRIAD plus gyro propagation estimate its attitude, and a four-reaction-wheel pyramid points body `+Z` toward the Sun. Autonomous `BOOT`, `DETUMBLE`, `SAFE`, `SUN_ACQUIRE`, and `SUN_POINT` modes gate the controllers and wait safely through eclipse. The custom model includes magnetorquers, coarse Sun sensors, an isolated magnetometer, and animated reaction wheels. Live status and telemetry distinguish truth scoring, measurements, estimates, commands, applied actuator torque, mode events, eclipse state, and pointing performance.
+Use `--sensor-profile ideal` for a zero-error mathematical baseline.
 
-Run the documented 25-case robustness campaign with the optimized build:
+## Monte Carlo Campaign
+
+Build the optimized targets and run the documented validation envelope:
 
 ```bash
+cmake --preset release
+cmake --build --preset release
+
 ./build/release/detumble_monte_carlo --runs 25 --duration 8000 \
   --time-step 0.02 --seed 2026 \
   --results runs/phase13_runs.csv \
   --aggregate runs/phase13_aggregate.csv
 ```
 
-This envelope randomizes attitude, tumble axis and speed, initial orbit position, sensor biases, and sensor noise. The Phase 13 baseline passed `25/25` runs with a mean sunlit RMS true pointing error of `0.961 deg`; the full assumptions and limitations are in [`docs/REFERENCE.md`](docs/REFERENCE.md).
+The runner writes compact per-run and aggregate CSV metrics. Optional reduced telemetry can be enabled for investigating individual cases.
 
-Use the equivalent `release` presets for an optimized build. Build artifacts are written beneath `build/` and are ignored by Git.
+## Project Structure
 
-The project is organized as separate targets:
+- `detumble_core` — rendering-independent simulation library
+- `detumble` — deterministic headless mission runner
+- `detumble_monte_carlo` — randomized robustness campaign
+- `detumble_viewer` — desktop mission visualization
+- `detumble_tests` — unit and integration test executable
+- `assets/scripts/create_detumble_3u.py` — reproducible Blender model generator
 
-- `detumble_core`: rendering-independent simulation library
-- `detumble_cli`: headless command-line simulation, emitted as `detumble`
-- `detumble_monte_carlo`: randomized headless mission validation
-- `detumble_viewer`: desktop visualization application
-- `detumble_tests`: automated tests
+The canonical implementation details, reference frames, units, assumptions, algorithms, and validation criteria are documented in [docs/REFERENCE.md](docs/REFERENCE.md). The incremental development history is in [docs/PLAN.md](docs/PLAN.md).
 
-Third-party model attribution is recorded in [`THIRD_PARTY.md`](THIRD_PARTY.md).
+## Scope and Limitations
 
-See [`docs/PLAN.md`](docs/PLAN.md) for the incremental roadmap and [`docs/REFERENCE.md`](docs/REFERENCE.md) for the canonical technical reference.
+Detumble is an educational ADCS simulation, not flight-qualified software or a general-purpose spacecraft simulator. The orbit is prescribed rather than numerically propagated. The Sun direction and geomagnetic field are simplified. Aerodynamic drag, gravity-gradient torque, residual dipole, flexible-body motion, detailed power generation, thermal behavior, wheel-bearing physics, and automatic momentum unloading are not modeled.
+
+## Technology
+
+C++20, CMake, Eigen, Catch2, raylib, Dear ImGui, rlImGui, Blender, GitHub Actions, and CSV telemetry. Dependency and asset notes are recorded in [THIRD_PARTY.md](THIRD_PARTY.md).
 
 ## License
 

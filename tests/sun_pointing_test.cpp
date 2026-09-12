@@ -15,6 +15,11 @@ TEST_CASE("desired Sun attitude fixes pointing and roll axes") {
     const detumble::SunPointingControllerConfig config;
     const Eigen::Vector3d sun_inertial = Eigen::Vector3d::UnitX();
 
+    REQUIRE(config.sun_axis_body.isApprox(
+        Eigen::Vector3d{1.0, 1.0, 0.0}.normalized()
+    ));
+    REQUIRE(config.roll_axis_body.isApprox(Eigen::Vector3d::UnitZ()));
+
     const Eigen::Quaterniond desired =
         detumble::desired_sun_pointing_attitude(config, sun_inertial);
 
@@ -140,6 +145,19 @@ TEST_CASE("Sun-pointing configuration rejects invalid axes and limits") {
     REQUIRE_THROWS_AS(
         detumble::sun_pointing_command(
             invalid_limit,
+            Eigen::Quaterniond::Identity(),
+            Eigen::Vector3d::Zero(),
+            Eigen::Quaterniond::Identity()
+        ),
+        std::invalid_argument
+    );
+
+    detumble::SunPointingControllerConfig invalid_acquisition_limit;
+    invalid_acquisition_limit.acquisition_maximum_torque_body_Nm.x() =
+        invalid_acquisition_limit.maximum_torque_body_Nm.x() + 1.0;
+    REQUIRE_THROWS_AS(
+        detumble::sun_pointing_command(
+            invalid_acquisition_limit,
             Eigen::Quaterniond::Identity(),
             Eigen::Vector3d::Zero(),
             Eigen::Quaterniond::Identity()

@@ -403,13 +403,18 @@ void AutonomousFlightSoftware::evaluate_mode(
 void AutonomousFlightSoftware::update_pointing(
     const AutonomousFlightSoftwareInput& input
 ) {
+    SunPointingControllerConfig controller_config = config_.sun_pointing;
+    if (state_.mode == FlightMode::sun_acquire) {
+        controller_config.maximum_torque_body_Nm =
+            config_.sun_pointing.acquisition_maximum_torque_body_Nm;
+    }
     const Eigen::Quaterniond desired_attitude =
         desired_sun_pointing_attitude(
-            config_.sun_pointing,
+            controller_config,
             input.sun_direction_inertial
         );
     state_.sun_pointing = sun_pointing_command(
-        config_.sun_pointing,
+        controller_config,
         attitude_estimator_.estimate().body_to_inertial,
         input.gyroscope.angular_velocity_body_rad_s,
         desired_attitude

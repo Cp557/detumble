@@ -96,20 +96,13 @@ if(DETUMBLE_BUILD_VIEWER)
         DOWNLOAD_EXTRACT_TIMESTAMP OFF
     )
     FetchContent_Declare(
-        implot
-        SYSTEM
-        URL https://github.com/epezent/implot/archive/refs/tags/v1.0.tar.gz
-        URL_HASH SHA256=e4a9db64eef7bcc604e2a5ea380af124eb97aa3e8a6a96330079c88add0f7e93
-        DOWNLOAD_EXTRACT_TIMESTAMP OFF
-    )
-    FetchContent_Declare(
         rlimgui
         SYSTEM
         URL https://github.com/raylib-extras/rlImGui/archive/3bc5731c4216bb8caa67fbea24aa85ce80d57ccb.tar.gz
         URL_HASH SHA256=2198c4eb4c0a2b8efc2204da046ef014a2c7b736e1483039badee6d19a7ed35a
         DOWNLOAD_EXTRACT_TIMESTAMP OFF
     )
-    FetchContent_MakeAvailable(raylib imgui implot rlimgui)
+    FetchContent_MakeAvailable(raylib imgui rlimgui)
 
     add_library(
         detumble_imgui
@@ -123,18 +116,10 @@ if(DETUMBLE_BUILD_VIEWER)
         detumble_imgui
         SYSTEM PUBLIC ${imgui_SOURCE_DIR}
     )
-
-    add_library(
-        detumble_implot
-        STATIC
-            ${implot_SOURCE_DIR}/implot.cpp
-            ${implot_SOURCE_DIR}/implot_items.cpp
+    target_compile_definitions(
+        detumble_imgui
+        PUBLIC "ImDrawIdx=unsigned int"
     )
-    target_include_directories(
-        detumble_implot
-        SYSTEM PUBLIC ${implot_SOURCE_DIR}
-    )
-    target_link_libraries(detumble_implot PUBLIC detumble_imgui)
 
     add_library(detumble_rlimgui STATIC ${rlimgui_SOURCE_DIR}/rlImGui.cpp)
     target_include_directories(
@@ -148,7 +133,6 @@ if(DETUMBLE_BUILD_VIEWER)
         detumble_viewer
         PRIVATE
             detumble::core
-            detumble_implot
             detumble_rlimgui
             raylib
     )

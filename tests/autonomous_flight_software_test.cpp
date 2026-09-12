@@ -139,6 +139,45 @@ TEST_CASE("autonomous flight software executes and logs the mission modes") {
     );
 }
 
+TEST_CASE("Sun acquisition uses a gentler reaction-wheel torque limit") {
+    const detumble::AutonomousFlightSoftwareConfig config =
+        fast_mission_config();
+    detumble::AutonomousFlightSoftware flight_software{config};
+    const Eigen::Quaterniond desired =
+        detumble::desired_sun_pointing_attitude(
+            config.sun_pointing,
+            Eigen::Vector3d::UnitX()
+        );
+    const Eigen::Quaterniond offset_attitude = desired * Eigen::Quaterniond{
+        Eigen::AngleAxisd{0.08, Eigen::Vector3d::UnitX()}
+    };
+
+    flight_software.update(mission_input(0.0, offset_attitude));
+    flight_software.update(mission_input(0.1, offset_attitude));
+    flight_software.update(mission_input(0.2, offset_attitude));
+    REQUIRE(
+        flight_software.state().mode == detumble::FlightMode::sun_acquire
+    );
+    const Eigen::Vector3d acquisition_torque =
+        flight_software.state()
+            .actuator_command.reaction_wheel_torque_body_Nm;
+    REQUIRE((acquisition_torque.array().abs()
+             <= config.sun_pointing.acquisition_maximum_torque_body_Nm
+                    .array()).all());
+
+    flight_software.update(mission_input(0.3, offset_attitude));
+    REQUIRE(
+        flight_software.state().mode == detumble::FlightMode::sun_point
+    );
+    flight_software.update(mission_input(0.4, offset_attitude));
+    const Eigen::Vector3d pointing_torque =
+        flight_software.state()
+            .actuator_command.reaction_wheel_torque_body_Nm;
+    REQUIRE(pointing_torque.norm() > acquisition_torque.norm());
+    REQUIRE((pointing_torque.array().abs()
+             <= config.sun_pointing.maximum_torque_body_Nm.array()).all());
+}
+
 TEST_CASE("autonomous flight software enters SAFE without an attitude") {
     detumble::AutonomousFlightSoftware flight_software{
         fast_mission_config()

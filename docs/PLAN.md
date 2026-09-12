@@ -6,7 +6,7 @@ Build Detumble as a sequence of small, validated milestones. Complete each phase
 
 Detumble will be a cross-platform C++ desktop simulation of a generic 3U CubeSat recovering from an uncontrolled tumble in a 500 km circular Low Earth Orbit. The spacecraft will use magnetorquers for B-dot detumbling, estimate its attitude from realistic sensor measurements, acquire the Sun, and maintain a Sun-pointing attitude with four reaction wheels.
 
-The desktop viewer will provide close-up and orbital camera views, live telemetry, flight-mode status, and optional overlays for reference frames, angular velocity, magnetic field, Sun direction, actuator commands, and control torque.
+The desktop viewer will provide one focused orbital camera, compact controls, and one consolidated mission-status panel containing the current goal and actuator schematic.
 
 The simulator and flight-software algorithms will run through one native C++ path. This keeps the application fast, understandable, and portable across macOS, Linux, and Windows.
 
@@ -49,14 +49,12 @@ Excluded:
 - Eigen for vectors, matrices, quaternions, and wheel-allocation math
 - Catch2 for unit and integration tests
 - raylib for the desktop window, camera, rendering, and model loading
-- Dear ImGui with ImPlot for controls and telemetry plots
-- CLI11 for headless simulation arguments
-- nlohmann/json for scenario configuration and run metadata
+- Dear ImGui for controls, status, and the mission-progress gauge
 - Blender for authoring a custom 3U CubeSat and exporting it as GLB
 - CSV for human-readable telemetry output
 - GitHub Actions for cross-platform builds and tests
 
-The Phase 3 compatibility prototype pins raylib 6.0, Dear ImGui 1.92.7, ImPlot 1.0, and a raylib-6-compatible rlImGui revision. Later application dependencies will be pinned when their phase introduces them.
+The Phase 3 compatibility prototype included ImPlot while exploring live telemetry. The focused final viewer no longer needs a plotting dependency. It pins raylib 6.0, Dear ImGui 1.92.7, and a raylib-6-compatible rlImGui revision.
 
 ## Engineering Rules
 
@@ -130,8 +128,8 @@ Validation gate:
 - [x] Prototype raylib, Dear ImGui, ImPlot, and GLB loading in one cross-platform viewer.
 - [x] Pin compatible visualization dependency versions.
 - [x] Render a simple 3U rectangular placeholder using the propagated attitude.
-- [x] Add an orbiting close-up camera and body-axis overlay.
-- [x] Add pause, resume, reset, single-step, and playback-speed controls.
+- [x] Add an orbit camera and body-axis overlay.
+- [x] Add pause, resume, reset, and simulation-speed controls.
 - [x] Plot body rates and quaternion norm live.
 - [x] Keep simulation updates fixed-step and independent of rendering frame rate.
 
@@ -140,7 +138,7 @@ Validation gate:
 - [x] The same seeded run produces the same final state with and without the viewer.
 - [x] The visible body-axis rotations agree with the frame-convention tests.
 
-Validation status: the full viewer stack builds and launches on macOS, the uncompressed NASA GLB loads successfully, and all 25 viewer-enabled tests pass. The viewer and CLI use the same fixed-step simulation runner. Body-axis endpoints and the 3U outline use the tested body-to-inertial frame transform directly, and a raylib integration test confirms the rendered model uses the same positive-rotation convention.
+Validation status: the full viewer stack builds and launches on macOS, the prototype GLB loader works, and all early viewer-enabled tests passed. The viewer and CLI use the same fixed-step simulation runner. Body-axis endpoints and the 3U outline use the tested body-to-inertial frame transform directly, and a raylib integration test confirms the rendered model uses the same positive-rotation convention. The temporary NASA prototype model was later replaced by the project-authored 3U model and removed from the repository.
 
 ## Phase 4 — Orbit and Magnetic Environment
 
@@ -209,9 +207,9 @@ Validation status: seeds `7`, `42`, and `2026` begin at fixed magnitudes of `5`,
 - [x] Add four reaction-wheel placeholders in a pyramid arrangement.
 - [x] Align the GLB origin, scale, and axes with the simulation body frame.
 - [x] Keep component positions and orientations in simulation configuration rather than relying on the mesh as physics data.
-- [x] Add solid, transparent, and cutaway rendering modes.
+- [x] Add a solid custom 3U spacecraft rendering mode.
 - [x] Visualize angular velocity, magnetic field, magnetic dipole, and torque with distinct vector arrows.
-- [x] Credit any NASA textures or reference assets in a third-party attribution file.
+- [x] Document the visual model's provenance and any third-party dependencies.
 
 Validation gate:
 
@@ -290,7 +288,7 @@ Validation status: three detumbled initial attitudes, including a `170 deg` case
 - [x] Enforce wheel torque and speed limits.
 - [x] Report allocation error and saturation in telemetry.
 - [x] Add optional single-wheel failure scenarios after nominal behavior works.
-- [x] Animate wheel spin and highlight saturated or failed wheels in the cutaway view.
+- [x] Report saturated or failed wheels in the viewer diagnostics.
 - [x] Explain reaction wheels, momentum exchange, allocation matrices, saturation, and redundancy in `docs/CONCEPTS.md`.
 
 Validation gate:
@@ -319,7 +317,7 @@ Validation gate:
 
 Milestone result: the complete autonomous recovery and Sun-pointing mission.
 
-Validation status: the seed-42 `6,000 s` mission transitions `BOOT -> DETUMBLE -> SAFE -> SUN_ACQUIRE -> SUN_POINT`. It safely waits through eclipse, then finishes in steady Sun pointing at `0.0602 deg` estimated pointing error and `0.00912 deg/s` body rate. The estimator and controllers receive only timestamped sensor measurements and inertial reference vectors; true attitude is used only by the plant and validation score.
+Validation status: the seed-42 `6,000 s` mission transitions `BOOT -> DETUMBLE -> SAFE -> SUN_ACQUIRE -> SUN_POINT`. It safely waits through eclipse, slews for about `214 s` with reduced reaction-wheel torque, then finishes in steady Sun pointing at `0.385 deg` estimated pointing error and `0.0132 deg/s` body rate while aiming the two-panel power axis toward the Sun. The estimator and controllers receive only timestamped sensor measurements and inertial reference vectors; true attitude is used only by the plant and validation score.
 
 ## Phase 13 — Sensor Realism and Robustness
 
@@ -338,16 +336,25 @@ Validation gate:
 
 - [x] The mission meets documented success-rate and pointing-performance targets across a documented scenario envelope.
 
-Validation status: the documented master-seed-2026 campaign passed `25/25` randomized `8,000 s` missions at a `0.02 s` step with `5` to `15 deg/s` initial tumble, randomized attitude and orbit phase, and seeded gyro, magnetometer, and coarse-Sun-sensor errors. Mean sunlit RMS true pointing error was `0.961 deg`, the worst per-run RMS was `1.908 deg`, maximum final rate was `0.0473 deg/s`, and no wheel speed-saturated. A six-candidate tuning comparison retained the established gains because every candidate passed and the pointing difference was below `0.009 deg`. Endpoint-in-eclipse false failures and a `0.05 s` step sensitivity failure set are documented in `docs/REFERENCE.md`; an eclipse-ending seed is locked into regression coverage.
+Validation status: the documented master-seed-2026 campaign passed `25/25` randomized `8,000 s` missions at a `0.02 s` step with `5` to `15 deg/s` initial tumble, randomized attitude and orbit phase, and seeded gyro, magnetometer, and coarse-Sun-sensor errors. With the two-panel power axis and gentle acquisition torque, mean sunlit RMS true pointing error was `0.922 deg`, the worst per-run RMS was `1.555 deg`, maximum final rate was `0.0314 deg/s`, and no wheel reached its speed limit. Endpoint-in-eclipse false failures and a `0.05 s` step sensitivity failure set are documented in `docs/REFERENCE.md`; an eclipse-ending seed is locked into regression coverage.
 
 ## Phase 14 — Finish the Application
 
-- [x] Finalize close-up, cutaway, and orbital camera views.
-- [x] Finalize telemetry plots, units, legends, colors, and vector-arrow scaling.
+- [x] Finalize a focused orbital camera view.
+- [x] Replace telemetry plots with one context-aware goal gauge for angular speed or Sun-pointing error.
+- [x] Consolidate mission progress and actuator internals into the mission-status panel.
+- [x] Use a gentle physical reaction-wheel torque limit during Sun acquisition and show a latched mission-goal-achieved state.
+- [x] Smooth and rate-limit the displayed pointing error without changing simulation telemetry.
 - [x] Add a concise scenario panel with seed, time, mode, rate, pointing error, eclipse state, and actuator status.
-- [x] Support live runs and playback of recorded runs.
+- [x] Keep the presentation focused on restartable deterministic live scenarios.
 - [x] Add sensible default scenarios without turning the viewer into a large configuration editor.
 - [x] Add keyboard and mouse help inside the application.
+- [x] Add a deterministic starfield and a simple blue Earth with a transparent wireframe shell.
+- [x] Add a fading recent-orbit trail and smooth camera transitions.
+- [x] Remove the reference grid and separate visual scale from physical state.
+- [x] Keep the default orbit scene uncluttered by omitting angular-velocity and eclipse-volume overlays.
+- [x] Remove engineering diagnostics and optional vector controls from the presentation UI.
+- [x] Add an uncluttered actuator schematic showing the configured magnetorquer rods and animated four-wheel pyramid.
 - [ ] Verify clean native builds on current macOS, Linux, and Windows environments.
 - [x] Profile accelerated simulation and viewer performance.
 
@@ -358,21 +365,22 @@ Application acceptance criteria:
 - [x] Automated tests validate the main mathematical and physical assumptions.
 - [x] Monte Carlo results support the project's performance claims.
 
-Local validation status: debug and release builds are clean on macOS, all `102` tests pass, and a release `6,000 s` mission completes in about `0.54 s` on the development Mac. The viewer also reports rolling frame rate, fixed-step throughput, and physics real-time factor. The existing three-platform GitHub Actions run passed on 2026-08-25; the current application changes still require their post-push matrix run.
+Local validation status: debug and release builds are clean on macOS and all `103` tests pass. The documented 25-run release campaign also passes. The existing three-platform GitHub Actions run passed on 2026-08-25; the current application changes still require their post-push matrix run.
 
 ## Phase 15 — Portfolio Documentation and Open-Source Release
 
-- [ ] Add screenshots, an architecture diagram, equations, validation results, and build instructions to the README.
-- [ ] Complete `docs/REFERENCE.md` with architecture, data flow, frames, units, models, assumptions, and configuration.
-- [ ] Add a third-party dependency and asset attribution file.
-- [ ] Record a short demonstration showing tumble, detumble, Sun acquisition, and stable pointing.
+- [x] Add final screenshots and a demo GIF to the README.
+- [x] Add an architecture diagram, equations, validation results, and build instructions to the README.
+- [x] Complete `docs/REFERENCE.md` with architecture, data flow, frames, units, models, assumptions, and configuration.
+- [x] Add a third-party dependency and asset attribution file.
+- [x] Record a short demonstration showing tumble, detumble, Sun acquisition, and stable pointing.
 - [ ] Tag a reproducible release.
 - [ ] Make the GitHub repository public when it is ready to use as a portfolio project.
 
 Release acceptance criteria:
 
-- [ ] A new user can build and run a default mission using the documented commands.
-- [ ] Every major approximation and limitation is documented and explainable.
+- [x] A new user can build and run a default mission using the documented commands on macOS.
+- [x] Every major approximation and limitation is documented and explainable.
 
 ## Optional Extensions After the Final Product
 
