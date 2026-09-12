@@ -375,7 +375,7 @@ Validation status: debug and release builds are clean on macOS and all `103` tes
 - [x] Add a third-party dependency and asset attribution file.
 - [x] Record a short demonstration showing tumble, detumble, Sun acquisition, and stable pointing.
 - [x] Tag a reproducible `v0.1.0` release.
-- [x] Make the GitHub repository public as a portfolio project.
+- [ ] Make the GitHub repository public as a portfolio project.
 
 Release acceptance criteria:
 
