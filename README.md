@@ -6,9 +6,9 @@
 
 Detumble is a cross-platform C++ simulation of a 3U CubeSat autonomously recovering from an uncontrolled tumble in Low Earth Orbit. It models the spacecraft's rotational physics, sensors, actuators, attitude estimation, flight modes, and closed-loop control, then presents the mission in a focused desktop visualization.
 
-![Detumble mission demonstration](docs/media/detumble-demo.gif)
+[![Detumble mission demonstration](docs/media/detumble-demo.gif)](docs/media/detumble.mp4)
 
-[Download the higher-quality MP4 demo](docs/media/detumble-demo.mp4).
+[Watch the complete 92-second mission demonstration](docs/media/detumble.mp4).
 
 ## Mission
 
