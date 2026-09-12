@@ -355,7 +355,7 @@ Validation status: the documented master-seed-2026 campaign passed `25/25` rando
 - [x] Keep the default orbit scene uncluttered by omitting angular-velocity and eclipse-volume overlays.
 - [x] Remove engineering diagnostics and optional vector controls from the presentation UI.
 - [x] Add an uncluttered actuator schematic showing the configured magnetorquer rods and animated four-wheel pyramid.
-- [ ] Verify clean native builds on current macOS, Linux, and Windows environments.
+- [x] Verify clean native builds on current macOS, Linux, and Windows environments.
 - [x] Profile accelerated simulation and viewer performance.
 
 Application acceptance criteria:
@@ -365,7 +365,7 @@ Application acceptance criteria:
 - [x] Automated tests validate the main mathematical and physical assumptions.
 - [x] Monte Carlo results support the project's performance claims.
 
-Local validation status: debug and release builds are clean on macOS and all `103` tests pass. The documented 25-run release campaign also passes. The existing three-platform GitHub Actions run passed on 2026-08-25; the current application changes still require their post-push matrix run.
+Validation status: debug and release builds are clean on macOS and all `103` tests pass. The documented 25-run release campaign also passes. GitHub Actions configured, compiled, and passed all tests on current macOS, Ubuntu, and Windows runners on 2026-09-12.
 
 ## Phase 15 — Portfolio Documentation and Open-Source Release
 
@@ -374,12 +374,12 @@ Local validation status: debug and release builds are clean on macOS and all `10
 - [x] Complete `docs/REFERENCE.md` with architecture, data flow, frames, units, models, assumptions, and configuration.
 - [x] Add a third-party dependency and asset attribution file.
 - [x] Record a short demonstration showing tumble, detumble, Sun acquisition, and stable pointing.
-- [ ] Tag a reproducible release.
-- [ ] Make the GitHub repository public when it is ready to use as a portfolio project.
+- [x] Tag a reproducible `v0.1.0` release.
+- [x] Make the GitHub repository public as a portfolio project.
 
 Release acceptance criteria:
 
-- [x] A new user can build and run a default mission using the documented commands on macOS.
+- [x] A new user can build and run a default mission using the documented commands; all targets also build and test in the three-platform CI matrix.
 - [x] Every major approximation and limitation is documented and explainable.
 
 ## Optional Extensions After the Final Product
