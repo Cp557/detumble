@@ -6,9 +6,7 @@
 
 Detumble is a virtual CubeSat that starts out spinning uncontrollably and uses simulated onboard hardware to steady itself and point its solar panels toward the Sun. It shows how a small satellite can sense its surroundings, make decisions, and control its orientation in space.
 
-[![Detumble mission demonstration](docs/media/detumble-demo.gif)](docs/media/detumble.mp4)
-
-[Watch the complete 92-second mission demonstration](docs/media/detumble.mp4).
+https://github.com/user-attachments/assets/de8f11ef-457b-4ef1-b471-890b00fe2222
 
 ## Mission
 

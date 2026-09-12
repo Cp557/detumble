@@ -369,7 +369,7 @@ Validation status: debug and release builds are clean on macOS and all `103` tes
 
 ## Phase 15 — Portfolio Documentation and Open-Source Release
 
-- [x] Add final screenshots and a demo GIF to the README.
+- [x] Add a final screenshot and embedded demo video to the README.
 - [x] Add an architecture diagram, equations, validation results, and build instructions to the README.
 - [x] Complete `docs/REFERENCE.md` with architecture, data flow, frames, units, models, assumptions, and configuration.
 - [x] Add a third-party dependency and asset attribution file.
