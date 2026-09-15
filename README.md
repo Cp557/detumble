@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C.svg)](https://en.cppreference.com/w/cpp/20)
 
-Detumble is a virtual CubeSat that starts out spinning uncontrollably and uses simulated onboard hardware to steady itself and point its solar panels toward the Sun. It shows how a small satellite can sense its surroundings, make decisions, and control its orientation in space.
+Detumble is a virtual CubeSat that starts out spinning uncontrollably and uses simulated onboard hardware to steady itself and then point its solar panels toward the Sun. It shows how a small satellite can sense its surroundings, make decisions, and control its orientation in space.
 
 https://github.com/user-attachments/assets/de8f11ef-457b-4ef1-b471-890b00fe2222
 
