@@ -6,6 +6,13 @@ For a plain-language introduction, start with [the README](../README.md) and
 [the magnetic-field walkthrough](MAGNETIC_FIELD.md). Recorded experiments and
 reproduction commands are in [validation](validation/README.md).
 
+## Build portability
+
+GitHub Actions builds the viewer and runs the test suite on Linux, macOS, and
+Windows. GNU/MinGW builds enable the assembler's large COFF object format for
+the core library because Eigen's estimator templates exceed the normal section
+limit in debug builds. This changes object-file packaging, not simulation behavior.
+
 ## Mission and boundary
 
 A generic rigid 3U CubeSat begins in an arbitrary seeded attitude with a seeded tumble axis. Three orthogonal magnetorquers damp rotation using one three-axis magnetometer. The mission goal is angular-speed magnitude at or below 0.5 deg/s continuously for 30 s. Damping continues afterward; there is no target pointing direction.

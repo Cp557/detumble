@@ -65,6 +65,11 @@ target_compile_definitions(
 )
 detumble_enable_warnings(detumble_core)
 
+if(MINGW AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    # Eigen's estimator templates exceed the standard COFF section limit in debug builds.
+    target_compile_options(detumble_core PRIVATE -Wa,-mbig-obj)
+endif()
+
 add_executable(detumble_cli apps/cli_main.cpp)
 set_target_properties(detumble_cli PROPERTIES OUTPUT_NAME detumble)
 target_link_libraries(detumble_cli PRIVATE detumble::core)
