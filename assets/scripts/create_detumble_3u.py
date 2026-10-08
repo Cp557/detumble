@@ -42,7 +42,6 @@ TORQUER_Y = material("TorquerY", (0.18, 0.78, 0.25), 0.15, 0.45)
 TORQUER_Z = material("TorquerZ", (0.16, 0.38, 0.95), 0.15, 0.45)
 SENSOR = material("Sensor", (0.20, 0.85, 0.95), 0.2, 0.3)
 MAGNETOMETER = material("Magnetometer", (0.95, 0.35, 0.78), 0.2, 0.3)
-WHEEL = material("ReactionWheel", (0.82, 0.47, 0.10), 0.75, 0.25)
 FASTENER = material("Fastener", (0.025, 0.03, 0.04), 0.85, 0.2)
 
 
@@ -210,31 +209,8 @@ def add_adcs_components(root):
         rod = add_cylinder(name, center, axis, 0.004, length, rod_material)
         rod.parent = root
 
-    pyramid = 0.7071067811865476
-    wheels = (
-        ("ReactionWheel_PosX", (0.022, 0.0, -0.065), (pyramid, 0.0, pyramid)),
-        ("ReactionWheel_PosY", (0.0, 0.022, -0.025), (0.0, pyramid, pyramid)),
-        ("ReactionWheel_NegX", (-0.022, 0.0, 0.015), (-pyramid, 0.0, pyramid)),
-        ("ReactionWheel_NegY", (0.0, -0.022, 0.055), (0.0, -pyramid, pyramid)),
-    )
-    for name, center, axis in wheels:
-        wheel = add_cylinder(name, center, axis, 0.018, 0.009, WHEEL, 32)
-        wheel.parent = root
-
 
 def add_sensors(root):
-    sensors = (
-        ("CSS_PosX", (0.0515, 0.0, 0.0), (1.0, 0.0, 0.0)),
-        ("CSS_NegX", (-0.0515, 0.0, 0.0), (-1.0, 0.0, 0.0)),
-        ("CSS_PosY", (0.0, 0.0515, 0.0), (0.0, 1.0, 0.0)),
-        ("CSS_NegY", (0.0, -0.0515, 0.0), (0.0, -1.0, 0.0)),
-        ("CSS_PosZ", (0.0, 0.0, 0.1715), (0.0, 0.0, 1.0)),
-        ("CSS_NegZ", (0.0, 0.0, -0.1715), (0.0, 0.0, -1.0)),
-    )
-    for name, center, normal in sensors:
-        sensor = add_surface_sensor(name, center, normal)
-        sensor.parent = root
-
     boom = add_cylinder(
         "MagnetometerBoom",
         (0.054, 0.0, 0.125),
@@ -260,17 +236,7 @@ def validate_scene(root):
         "Magnetorquer_X",
         "Magnetorquer_Y",
         "Magnetorquer_Z",
-        "CSS_PosX",
-        "CSS_NegX",
-        "CSS_PosY",
-        "CSS_NegY",
-        "CSS_PosZ",
-        "CSS_NegZ",
         "Magnetometer",
-        "ReactionWheel_PosX",
-        "ReactionWheel_PosY",
-        "ReactionWheel_NegX",
-        "ReactionWheel_NegY",
     }
     missing_components = required_components.difference(bpy.data.objects.keys())
     if missing_components:

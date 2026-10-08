@@ -1,242 +1,429 @@
 #include "detumble/attitude_estimator.hpp"
-
+#include "detumble/magnetorquer.hpp"
+#include <Eigen/Cholesky>
+#include <Eigen/Eigenvalues>
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 #include <stdexcept>
-
-#include <Eigen/Core>
-#include <Eigen/Geometry>
-
-#include "detumble/attitude.hpp"
-
 namespace detumble {
 namespace {
-
-bool finite_vector(const Eigen::Vector3d& vector) {
-    return vector.array().isFinite().all();
+using Vector9 = Eigen::Matrix<double, 9, 1>;
+using Matrix39 = Eigen::Matrix<double, 3, 9>;
+Eigen::Matrix3d cross_matrix(const Eigen::Vector3d &v) {
+    Eigen::Matrix3d matrix;
+    matrix << 0.0, -v.z(), v.y(), v.z(), 0.0, -v.x(), -v.y(), v.x(), 0.0;
+    return matrix;
 }
-
-bool valid_observation(
-    const AttitudeVectorObservation& observation,
-    const double minimum_vector_norm
-) {
-    return observation.valid
-        && finite_vector(observation.measured_body)
-        && finite_vector(observation.reference_inertial)
-        && observation.measured_body.norm() >= minimum_vector_norm
-        && observation.reference_inertial.norm() >= minimum_vector_norm;
+Eigen::Quaterniond rotation_increment(const Eigen::Vector3d &rotation) {
+    const double angle = rotation.norm();
+    return angle < 1e-12
+               ? Eigen::Quaterniond::Identity()
+               : Eigen::Quaterniond{Eigen::AngleAxisd{angle, rotation / angle}};
 }
-
-double separation_sine(
-    const Eigen::Vector3d& first,
-    const Eigen::Vector3d& second
-) {
-    return first.normalized().cross(second.normalized()).norm();
+EstimatorCovariance error_transition(const RigidBodyProperties &body,
+                                     const AttitudeState &state,
+                                     const Eigen::Vector3d &reference,
+                                     const Eigen::Vector3d &dipole, double dt) {
+    const auto inertia = body.principal_moments_body_kg_m2.asDiagonal();
+    const auto inverse_inertia =
+        body.principal_moments_body_kg_m2.cwiseInverse().asDiagonal();
+    const auto &omega = state.angular_velocity_body_rad_s;
+    const Eigen::Vector3d field = state.body_to_inertial.conjugate() * reference;
+    EstimatorCovariance dynamics = EstimatorCovariance::Zero();
+    dynamics.block<3, 3>(0, 0) = -cross_matrix(omega);
+    dynamics.block<3, 3>(0, 3).setIdentity();
+    dynamics.block<3, 3>(3, 0) =
+        inverse_inertia * cross_matrix(dipole) * cross_matrix(field);
+    dynamics.block<3, 3>(3, 3) = inverse_inertia * (cross_matrix(inertia * omega) -
+                                                    cross_matrix(omega) * inertia);
+    return EstimatorCovariance::Identity() + dt * dynamics +
+           0.5 * dt * dt * dynamics * dynamics;
 }
-
-Eigen::Matrix3d triad_basis(
-    const Eigen::Vector3d& first,
-    const Eigen::Vector3d& second
-) {
-    const Eigen::Vector3d primary = first.normalized();
-    const Eigen::Vector3d normal = primary.cross(second).normalized();
-    const Eigen::Vector3d transverse = normal.cross(primary);
-
-    Eigen::Matrix3d basis;
-    basis.col(0) = primary;
-    basis.col(1) = transverse;
-    basis.col(2) = normal;
-    return basis;
+AttitudeState propagate(const RigidBodyProperties &body, const AttitudeState &state,
+                        const Eigen::Vector3d &reference, const Eigen::Vector3d &dipole,
+                        double dt) {
+    return propagate_rigid_body_rk4(
+        body, state, dipole.cross(state.body_to_inertial.conjugate() * reference), dt);
 }
-
-AttitudeCorrectionStatus correction_status(
-    const std::optional<AttitudeVectorObservation>& first,
-    const std::optional<AttitudeVectorObservation>& second,
-    const AttitudeEstimatorConfig& config
-) {
-    if (!first.has_value() || !second.has_value()
-        || !first->valid || !second->valid) {
-        return AttitudeCorrectionStatus::unavailable;
-    }
-    if (!valid_observation(*first, config.minimum_vector_norm)
-        || !valid_observation(*second, config.minimum_vector_norm)) {
-        return AttitudeCorrectionStatus::invalid_measurement;
-    }
-    if (separation_sine(first->measured_body, second->measured_body)
-            < config.minimum_vector_separation_sine
-        || separation_sine(
-               first->reference_inertial,
-               second->reference_inertial
-           ) < config.minimum_vector_separation_sine) {
-        return AttitudeCorrectionStatus::degenerate_vectors;
-    }
-    return AttitudeCorrectionStatus::accepted;
-}
-
-}  // namespace
-
-std::optional<Eigen::Quaterniond> triad_attitude_body_to_inertial(
-    const AttitudeVectorObservation& first,
-    const AttitudeVectorObservation& second,
-    const double minimum_vector_norm,
-    const double minimum_vector_separation_sine
-) {
-    if (!std::isfinite(minimum_vector_norm) || minimum_vector_norm <= 0.0
-        || !std::isfinite(minimum_vector_separation_sine)
-        || minimum_vector_separation_sine < 0.0
-        || minimum_vector_separation_sine >= 1.0
-        || !valid_observation(first, minimum_vector_norm)
-        || !valid_observation(second, minimum_vector_norm)
-        || separation_sine(first.measured_body, second.measured_body)
-            < minimum_vector_separation_sine
-        || separation_sine(
-               first.reference_inertial,
-               second.reference_inertial
-           ) < minimum_vector_separation_sine) {
-        return std::nullopt;
-    }
-
-    const Eigen::Matrix3d body_basis =
-        triad_basis(first.measured_body, second.measured_body);
-    const Eigen::Matrix3d inertial_basis =
-        triad_basis(first.reference_inertial, second.reference_inertial);
-    return normalized_attitude(
-        Eigen::Quaterniond{inertial_basis * body_basis.transpose()}
-    );
-}
-
-double attitude_error_angle_rad(
-    const Eigen::Quaterniond& estimated_body_to_inertial,
-    const Eigen::Quaterniond& true_body_to_inertial
-) {
-    const Eigen::Quaterniond estimated =
-        normalized_attitude(estimated_body_to_inertial);
-    const Eigen::Quaterniond truth =
-        normalized_attitude(true_body_to_inertial);
-    const Eigen::Quaterniond difference = estimated.conjugate() * truth;
-    const double scalar = std::clamp(std::abs(difference.w()), 0.0, 1.0);
-    return 2.0 * std::acos(scalar);
-}
-
-std::string_view to_string(const AttitudeCorrectionStatus status) {
+} // namespace
+std::string_view to_string(const EstimatorStatus status) {
     switch (status) {
-        case AttitudeCorrectionStatus::unavailable:
-            return "NO CORRECTION";
-        case AttitudeCorrectionStatus::accepted:
-            return "TRIAD ACCEPTED";
-        case AttitudeCorrectionStatus::invalid_measurement:
-            return "INVALID MEASUREMENT";
-        case AttitudeCorrectionStatus::degenerate_vectors:
-            return "VECTORS NEARLY PARALLEL";
+    case EstimatorStatus::collecting:
+        return "collecting magnetic history";
+    case EstimatorStatus::ambiguous:
+        return "orientation/rate ambiguous";
+    case EstimatorStatus::tracking:
+        return "tracking";
+    case EstimatorStatus::rejected:
+        return "measurement rejected";
     }
-    return "UNKNOWN";
+    return "unknown";
 }
-
-AttitudeEstimator::AttitudeEstimator(AttitudeEstimatorConfig config)
-    : config_{config} {
-    if (!std::isfinite(config_.correction_gain)
-        || config_.correction_gain < 0.0
-        || config_.correction_gain > 1.0) {
+double attitude_error_angle_rad(const Eigen::Quaterniond &estimate,
+                                const Eigen::Quaterniond &truth) {
+    return normalized_attitude(estimate).angularDistance(normalized_attitude(truth));
+}
+AttitudeEstimator::AttitudeEstimator(AttitudeEstimatorConfig config,
+                                     RigidBodyProperties body,
+                                     VectorSensorErrorConfig sensor)
+    : config_{config}, body_{std::move(body)} {
+    const double values[] = {config_.initialization_window_s,
+                             config_.maximum_initial_rate_rad_s,
+                             config_.field_model_standard_deviation_T,
+                             config_.rate_random_walk_rad_s_sqrt_s,
+                             config_.bias_random_walk_T_sqrt_s,
+                             config_.innovation_gate,
+                             config_.confidence_rate_standard_deviation_rad_s};
+    for (double value : values)
+        if (!std::isfinite(value) || value < 0.0)
+            throw std::invalid_argument{
+                "Estimator settings must be finite and nonnegative"};
+    if (config_.initialization_window_s < 2.0 || config_.innovation_gate == 0.0 ||
+        config_.maximum_initial_rate_rad_s == 0.0) {
         throw std::invalid_argument{
-            "Estimator correction gain must be between zero and one"
-        };
+            "Estimator window, gate and rate envelope must be positive"};
     }
-    if (!std::isfinite(config_.minimum_vector_norm)
-        || config_.minimum_vector_norm <= 0.0) {
-        throw std::invalid_argument{
-            "Estimator minimum vector norm must be finite and positive"
-        };
-    }
-    if (!std::isfinite(config_.minimum_vector_separation_sine)
-        || config_.minimum_vector_separation_sine < 0.0
-        || config_.minimum_vector_separation_sine >= 1.0) {
-        throw std::invalid_argument{
-            "Estimator vector-separation sine must be in [0, 1)"
-        };
+    static_cast<void>(angular_acceleration_body_rad_s2(body_, Eigen::Vector3d::Zero(),
+                                                       Eigen::Vector3d::Zero()));
+    for (Eigen::Index axis = 0; axis < 3; ++axis) {
+        measurement_variance_T2_[axis] =
+            std::max(1e-18, std::pow(sensor.noise_standard_deviation[axis], 2) +
+                                std::pow(sensor.quantization_step[axis], 2) / 12.0 +
+                                std::pow(config_.field_model_standard_deviation_T, 2));
+        bias_prior_T_[axis] = std::max(100e-9, sensor.bias_standard_deviation[axis]);
     }
 }
-
 void AttitudeEstimator::reset() {
     estimate_ = {};
-    has_sample_time_ = false;
-    has_valid_gyroscope_measurement_ = false;
+    history_.clear();
+    candidates_.clear();
+    dipole_integral_.setZero();
+    prediction_interval_s_ = 0.0;
+    last_measurement_time_s_ = -1.0;
 }
-
-void AttitudeEstimator::update(const AttitudeEstimatorInput& input) {
-    if (!std::isfinite(input.sample_time_s) || input.sample_time_s < 0.0) {
-        throw std::invalid_argument{
-            "Estimator sample time must be finite and nonnegative"
-        };
+void AttitudeEstimator::predict(const double time_s, const Eigen::Vector3d &reference,
+                                const Eigen::Vector3d &dipole, const double dt) {
+    if (!config_.enabled)
+        return;
+    if (!std::isfinite(time_s) || time_s < 0.0 || !std::isfinite(dt) || dt < 0.0 ||
+        !reference.allFinite() || !dipole.allFinite())
+        throw std::invalid_argument{"Invalid estimator prediction"};
+    dipole_integral_ += dt * dipole;
+    prediction_interval_s_ += dt;
+    for (auto &candidate : candidates_) {
+        const auto transition =
+            error_transition(body_, candidate.attitude, reference, dipole, dt);
+        candidate.covariance =
+            transition * candidate.covariance * transition.transpose();
+        // Continuous angular-acceleration noise integrated through angle and rate.
+        const double variance = std::pow(config_.rate_random_walk_rad_s_sqrt_s, 2);
+        candidate.covariance.block<3, 3>(0, 0).diagonal().array() +=
+            variance * dt * dt * dt / 3.0;
+        candidate.covariance.block<3, 3>(0, 3).diagonal().array() +=
+            variance * dt * dt / 2.0;
+        candidate.covariance.block<3, 3>(3, 0).diagonal().array() +=
+            variance * dt * dt / 2.0;
+        candidate.covariance.block<3, 3>(3, 3).diagonal().array() += variance * dt;
+        candidate.covariance.block<3, 3>(6, 6).diagonal().array() +=
+            std::pow(config_.bias_random_walk_T_sqrt_s, 2) * dt;
+        candidate.attitude =
+            propagate(body_, candidate.attitude, reference, dipole, dt);
     }
-    if (has_sample_time_
-        && input.sample_time_s < estimate_.sample_time_s) {
+    if (!candidates_.empty())
+        publish(time_s + dt);
+}
+void AttitudeEstimator::update(const MagnetometerMeasurement &measurement,
+                               const Eigen::Vector3d &reference) {
+    if (!config_.enabled)
+        return;
+    if (!std::isfinite(measurement.sample_time_s) ||
+        measurement.sample_time_s <= last_measurement_time_s_ ||
+        !measurement.magnetic_field_body_T.allFinite() || !reference.allFinite() ||
+        reference.norm() < 1e-6) {
         throw std::invalid_argument{
-            "Estimator inputs must use nondecreasing timestamps"
-        };
+            "Estimator measurements must be valid and chronological"};
     }
-
-    if (input.gyroscope_valid) {
-        if (!finite_vector(input.angular_velocity_body_rad_s)) {
-            throw std::invalid_argument{
-                "Valid gyroscope measurements must be finite"
-            };
+    last_measurement_time_s_ = measurement.sample_time_s;
+    Observation observation{
+        measurement.sample_time_s, measurement.magnetic_field_body_T, reference,
+        prediction_interval_s_ > 0.0
+            ? Eigen::Vector3d{dipole_integral_ / prediction_interval_s_}
+            : Eigen::Vector3d::Zero()};
+    dipole_integral_.setZero();
+    prediction_interval_s_ = 0.0;
+    if (candidates_.empty()) {
+        history_.push_back(observation);
+        if (history_.back().time_s - history_.front().time_s >=
+            config_.initialization_window_s)
+            initialize();
+        publish(measurement.sample_time_s);
+        return;
+    }
+    for (auto &candidate : candidates_) {
+        const Eigen::Vector3d field =
+            candidate.attitude.body_to_inertial.conjugate() * reference;
+        Matrix39 observation_matrix = Matrix39::Zero();
+        observation_matrix.block<3, 3>(0, 0) = cross_matrix(field);
+        observation_matrix.block<3, 3>(0, 6).setIdentity();
+        const Eigen::Matrix3d residual_covariance =
+            observation_matrix * candidate.covariance * observation_matrix.transpose() +
+            measurement_variance_T2_.asDiagonal().toDenseMatrix();
+        const Eigen::Vector3d residual =
+            measurement.magnetic_field_body_T - field - candidate.bias;
+        const Eigen::LDLT<Eigen::Matrix3d> decomposition{residual_covariance};
+        candidate.innovation = residual.dot(decomposition.solve(residual));
+        candidate.score =
+            0.995 * candidate.score + std::min(100.0, candidate.innovation);
+        if (!std::isfinite(candidate.innovation) ||
+            candidate.innovation > config_.innovation_gate) {
+            ++candidate.rejected_samples;
+            continue;
+        }
+        candidate.rejected_samples = 0;
+        const Eigen::Matrix<double, 9, 3> gain =
+            decomposition
+                .solve(
+                    (candidate.covariance * observation_matrix.transpose()).transpose())
+                .transpose();
+        const Vector9 correction = gain * residual;
+        candidate.attitude.body_to_inertial =
+            normalized_attitude(candidate.attitude.body_to_inertial *
+                                rotation_increment(correction.head<3>()));
+        candidate.attitude.angular_velocity_body_rad_s += correction.segment<3>(3);
+        candidate.bias += correction.tail<3>();
+        const EstimatorCovariance remainder =
+            EstimatorCovariance::Identity() - gain * observation_matrix;
+        candidate.covariance =
+            remainder * candidate.covariance * remainder.transpose() +
+            gain * measurement_variance_T2_.asDiagonal() * gain.transpose();
+        EstimatorCovariance reset = EstimatorCovariance::Identity();
+        reset.block<3, 3>(0, 0) -= 0.5 * cross_matrix(correction.head<3>());
+        candidate.covariance = reset * candidate.covariance * reset.transpose();
+        candidate.covariance =
+            (0.5 * (candidate.covariance + candidate.covariance.transpose())).eval();
+    }
+    std::erase_if(candidates_, [](const Candidate &candidate) {
+        return candidate.rejected_samples >= 20 || !candidate.covariance.allFinite() ||
+               !candidate.attitude.angular_velocity_body_rad_s.allFinite();
+    });
+    if (candidates_.empty()) {
+        reset();
+        history_.push_back(observation);
+        last_measurement_time_s_ = observation.time_s;
+    }
+    publish(measurement.sample_time_s);
+}
+void AttitudeEstimator::initialize() {
+    double magnitude_error_squared{};
+    for (const auto &observation : history_) {
+        magnitude_error_squared +=
+            std::pow(observation.measured.norm() - observation.reference.norm(), 2);
+    }
+    const double magnitude_tolerance =
+        5.0 * measurement_variance_T2_.cwiseSqrt().maxCoeff() +
+        3.0 * bias_prior_T_.norm();
+    if (std::sqrt(magnitude_error_squared / static_cast<double>(history_.size())) >
+        magnitude_tolerance) {
+        const double cutoff =
+            history_.back().time_s - 0.5 * config_.initialization_window_s;
+        while (history_.front().time_s < cutoff)
+            history_.pop_front();
+        return;
+    }
+    // Fit a short prefix first to avoid rate aliases, then extend to the full window.
+    // Unknowns use dimensionless scales: 1 rad, 0.1 rad/s, and 1 microtesla.
+    const auto perturb = [](Candidate candidate, const Vector9 &change) {
+        candidate.attitude.body_to_inertial = normalized_attitude(
+            candidate.attitude.body_to_inertial * rotation_increment(change.head<3>()));
+        candidate.attitude.angular_velocity_body_rad_s += 0.1 * change.segment<3>(3);
+        candidate.bias += 1e-6 * change.tail<3>();
+        return candidate;
+    };
+    const auto residuals = [&](const Candidate &start, std::size_t count) {
+        Eigen::VectorXd residual(static_cast<Eigen::Index>(3 * count + 3));
+        auto state = start.attitude;
+        for (std::size_t i = 0; i < count; ++i) {
+            const auto &observation = history_[i];
+            if (i > 0) {
+                const double dt = observation.time_s - history_[i - 1].time_s;
+                state =
+                    propagate(body_, state,
+                              0.5 * (observation.reference + history_[i - 1].reference),
+                              observation.dipole, dt);
+            }
+            residual.segment<3>(static_cast<Eigen::Index>(3 * i)) =
+                (state.body_to_inertial.conjugate() * observation.reference +
+                 start.bias - observation.measured)
+                    .cwiseQuotient(measurement_variance_T2_.cwiseSqrt());
+        }
+        residual.tail<3>() = start.bias.cwiseQuotient(bias_prior_T_);
+        return residual;
+    };
+    const auto jacobian = [&](const Candidate &candidate, std::size_t count,
+                              const Eigen::VectorXd &residual) {
+        Eigen::MatrixXd jac(residual.size(), 9);
+        for (Eigen::Index axis = 0; axis < 9; ++axis) {
+            Vector9 delta = Vector9::Zero();
+            delta[axis] = 1e-5;
+            jac.col(axis) =
+                (residuals(perturb(candidate, delta), count) - residual) / 1e-5;
+        }
+        return jac;
+    };
+    const auto &first = history_.front();
+    const std::size_t derivative_end = std::min<std::size_t>(4, history_.size() - 1);
+    const double derivative_time = history_[derivative_end].time_s - first.time_s;
+    const Eigen::Vector3d derivative =
+        (history_[derivative_end].measured - first.measured) / derivative_time;
+    const Eigen::Vector3d transverse_rate =
+        derivative.cross(first.measured) / first.measured.squaredNorm();
+    const Eigen::Quaterniond aligned =
+        Eigen::Quaterniond::FromTwoVectors(first.measured, first.reference);
+    std::vector<Candidate> fitted;
+    for (int roll = 0; roll < 12; ++roll) {
+        for (int rate = -2; rate <= 2; ++rate) {
+            Candidate candidate;
+            candidate.attitude.body_to_inertial =
+                Eigen::Quaterniond{Eigen::AngleAxisd{roll * std::numbers::pi / 6.0,
+                                                     first.reference.normalized()}} *
+                aligned;
+            candidate.attitude.angular_velocity_body_rad_s =
+                transverse_rate + (0.5 * rate * config_.maximum_initial_rate_rad_s) *
+                                      first.measured.normalized();
+            for (const double window : {2.0, 10.0, config_.initialization_window_s}) {
+                const auto end = std::upper_bound(
+                    history_.begin(), history_.end(), first.time_s + window,
+                    [](double time, const Observation &observation) {
+                        return time < observation.time_s;
+                    });
+                const auto count = static_cast<std::size_t>(end - history_.begin());
+                double damping = 1e-3;
+                for (int iteration = 0; iteration < 18; ++iteration) {
+                    const Eigen::VectorXd residual = residuals(candidate, count);
+                    const Eigen::MatrixXd jac = jacobian(candidate, count, residual);
+                    const EstimatorCovariance normal = jac.transpose() * jac;
+                    EstimatorCovariance regularized = normal;
+                    regularized.diagonal().array() +=
+                        damping * (normal.diagonal().array() + 1.0);
+                    Vector9 step =
+                        regularized.ldlt().solve(-jac.transpose() * residual);
+                    // Bound optimizer excursions without imposing a truth-based rate
+                    // prior.
+                    const double scale = std::max({1.0, step.head<3>().norm() / 0.5,
+                                                   step.segment<3>(3).norm() / 0.5,
+                                                   step.tail<3>().norm() / 1.0});
+                    step /= scale;
+                    const auto trial = perturb(candidate, step);
+                    if (residuals(trial, count).squaredNorm() <
+                        residual.squaredNorm()) {
+                        candidate = trial;
+                        damping = std::max(1e-8, damping * 0.3);
+                        if (step.norm() < 1e-5)
+                            break;
+                    } else
+                        damping = std::min(1e8, damping * 10.0);
+                }
+            }
+            const auto residual = residuals(candidate, history_.size());
+            candidate.score = residual.squaredNorm();
+            if (!std::isfinite(candidate.score))
+                continue;
+            const auto jac = jacobian(candidate, history_.size(), residual);
+            const EstimatorCovariance information = jac.transpose() * jac;
+            const Eigen::SelfAdjointEigenSolver<EstimatorCovariance> decomposition{
+                information};
+            Vector9 scales;
+            scales << 1.0, 1.0, 1.0, 0.1, 0.1, 0.1, 1e-6, 1e-6, 1e-6;
+            candidate.covariance =
+                scales.asDiagonal() * decomposition.eigenvectors() *
+                decomposition.eigenvalues().cwiseMax(1e-6).cwiseInverse().asDiagonal() *
+                decomposition.eigenvectors().transpose() * scales.asDiagonal();
+            for (std::size_t i = 1; i < history_.size(); ++i) {
+                const auto &observation = history_[i];
+                const Eigen::Vector3d reference =
+                    0.5 * (observation.reference + history_[i - 1].reference);
+                const double dt = observation.time_s - history_[i - 1].time_s;
+                const auto transition = error_transition(
+                    body_, candidate.attitude, reference, observation.dipole, dt);
+                candidate.covariance =
+                    transition * candidate.covariance * transition.transpose();
+                candidate.attitude = propagate(body_, candidate.attitude, reference,
+                                               observation.dipole, dt);
+            }
+            fitted.push_back(candidate);
         }
     }
-
-    const double time_step_s = has_sample_time_
-        ? input.sample_time_s - estimate_.sample_time_s
-        : 0.0;
-    if (has_valid_gyroscope_measurement_) {
-        estimate_.body_to_inertial = integrate_attitude(
-            estimate_.body_to_inertial,
-            estimate_.angular_velocity_body_rad_s,
-            time_step_s
-        );
-    }
-    if (input.gyroscope_valid) {
-        estimate_.angular_velocity_body_rad_s =
-            input.angular_velocity_body_rad_s;
-    }
-    has_valid_gyroscope_measurement_ = input.gyroscope_valid;
-
-    estimate_.sample_time_s = input.sample_time_s;
-    has_sample_time_ = true;
-    estimate_.correction_status = correction_status(
-        input.magnetic_field,
-        input.sun_direction,
-        config_
-    );
-
-    if (estimate_.correction_status == AttitudeCorrectionStatus::accepted) {
-        const std::optional<Eigen::Quaterniond> triad =
-            triad_attitude_body_to_inertial(
-                *input.magnetic_field,
-                *input.sun_direction,
-                config_.minimum_vector_norm,
-                config_.minimum_vector_separation_sine
-            );
-        if (!triad.has_value()) {
-            throw std::logic_error{
-                "Accepted TRIAD observations did not produce an attitude"
-            };
+    std::sort(fitted.begin(), fitted.end(),
+              [](const Candidate &a, const Candidate &b) { return a.score < b.score; });
+    const double sample_count = static_cast<double>(3 * history_.size());
+    if (!fitted.empty() && fitted.front().score / sample_count < 4.0) {
+        const double best = fitted.front().score;
+        for (auto &candidate : fitted) {
+            if (candidate.score > best + 25.0)
+                break;
+            const bool duplicate = std::any_of(
+                candidates_.begin(), candidates_.end(), [&](const Candidate &existing) {
+                    return existing.attitude.body_to_inertial.angularDistance(
+                               candidate.attitude.body_to_inertial) < 1e-3 &&
+                           (existing.attitude.angular_velocity_body_rad_s -
+                            candidate.attitude.angular_velocity_body_rad_s)
+                                   .norm() < 1e-5 &&
+                           (existing.bias - candidate.bias).norm() < 1e-8;
+                });
+            if (!duplicate) {
+                candidate.score -= best;
+                candidates_.push_back(candidate);
+            }
         }
-        estimate_.body_to_inertial = normalized_attitude(
-            estimate_.body_to_inertial.slerp(
-                config_.correction_gain,
-                *triad
-            )
-        );
-        estimate_.valid = true;
-        ++estimate_.accepted_correction_count;
+        history_.clear();
+    } else {
+        // Slide the window by half its width and retry with fresh data.
+        const double cutoff =
+            history_.back().time_s - 0.5 * config_.initialization_window_s;
+        while (history_.front().time_s < cutoff)
+            history_.pop_front();
     }
 }
-
-const AttitudeEstimatorConfig& AttitudeEstimator::config() const {
-    return config_;
+void AttitudeEstimator::publish(const double time_s) {
+    estimate_.sample_time_s = time_s;
+    if (candidates_.empty()) {
+        estimate_.valid = false;
+        estimate_.confident = false;
+        estimate_.status = EstimatorStatus::collecting;
+        return;
+    }
+    const auto best = std::min_element(
+        candidates_.begin(), candidates_.end(),
+        [](const Candidate &a, const Candidate &b) { return a.score < b.score; });
+    estimate_.attitude = best->attitude;
+    estimate_.bias_body_T = best->bias;
+    estimate_.covariance = best->covariance;
+    estimate_.normalized_innovation = best->innovation;
+    const Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> covariance{
+        best->covariance.block<3, 3>(3, 3)};
+    double deviation = std::sqrt(std::max(0.0, covariance.eigenvalues().maxCoeff()));
+    double spread{};
+    for (const auto &candidate : candidates_) {
+        if (candidate.score <= best->score + 25.0) {
+            const Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> alternative_covariance{
+                candidate.covariance.block<3, 3>(3, 3)};
+            deviation = std::max(
+                deviation, std::sqrt(std::max(
+                               0.0, alternative_covariance.eigenvalues().maxCoeff())));
+            spread = std::max(spread, (candidate.attitude.angular_velocity_body_rad_s -
+                                       best->attitude.angular_velocity_body_rad_s)
+                                          .norm());
+        }
+    }
+    estimate_.rate_standard_deviation_rad_s = deviation + spread;
+    estimate_.valid =
+        best->covariance.allFinite() && covariance.eigenvalues().minCoeff() >= -1e-15;
+    estimate_.confident = estimate_.valid && best->rejected_samples == 0 &&
+                          estimate_.rate_standard_deviation_rad_s <
+                              config_.confidence_rate_standard_deviation_rad_s;
+    estimate_.status = best->rejected_samples > 0 ? EstimatorStatus::rejected
+                       : estimate_.confident      ? EstimatorStatus::tracking
+                                                  : EstimatorStatus::ambiguous;
 }
-
-const AttitudeEstimate& AttitudeEstimator::estimate() const {
-    return estimate_;
-}
-
-}  // namespace detumble
+} // namespace detumble

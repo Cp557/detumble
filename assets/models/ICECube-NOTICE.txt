@@ -1,0 +1,9 @@
+CubeSat - ICECube exterior model
+Credit: NASA/Christopher R. Meaney
+Source: https://science.nasa.gov/3d-resources/cubesat-icecube/
+Media usage guidelines: https://www.nasa.gov/nasa-brand-center/images-and-media/
+
+Detumble adapts the NASA GLB by decoding Draco compression, baking transforms,
+centering the exterior, and uniformly scaling its length to 0.34 meters.
+Geometry and materials depict ICECube; simulation dynamics and magnetic
+hardware are independently defined by Detumble. NASA endorsement is not implied.

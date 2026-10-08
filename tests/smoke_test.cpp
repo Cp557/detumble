@@ -5,5 +5,5 @@
 #include "detumble/version.hpp"
 
 TEST_CASE("the core library reports the project version") {
-    REQUIRE(std::string{detumble::version()} == "0.1.0");
+    REQUIRE(std::string{detumble::version()} == "0.2.0");
 }

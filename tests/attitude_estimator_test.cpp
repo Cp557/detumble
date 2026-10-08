@@ -1,225 +1,100 @@
-#include <cmath>
-#include <limits>
-#include <numbers>
-
-#include <Eigen/Core>
-#include <Eigen/Geometry>
-#include <catch2/catch_approx.hpp>
-#include <catch2/catch_test_macros.hpp>
-
-#include "detumble/attitude.hpp"
 #include "detumble/attitude_estimator.hpp"
-#include "detumble/frames.hpp"
-
-namespace {
-
-detumble::AttitudeVectorObservation observation(
-    const Eigen::Quaterniond& body_to_inertial,
-    const Eigen::Vector3d& reference_inertial
-) {
-    return {
-        .measured_body = detumble::rotate_inertial_to_body(
-            body_to_inertial,
-            reference_inertial
-        ),
-        .reference_inertial = reference_inertial,
-        .valid = true
-    };
+#include "detumble/mission.hpp"
+#include <Eigen/Eigenvalues>
+#include <catch2/catch_test_macros.hpp>
+#include <numbers>
+TEST_CASE("a single magnetic vector cannot establish attitude or rate confidence") {
+    detumble::AttitudeEstimator estimator;
+    estimator.update({0.0, {10e-6, 0.0, 30e-6}}, {0.0, 10e-6, 30e-6});
+    REQUIRE_FALSE(estimator.estimate().valid);
+    REQUIRE_FALSE(estimator.estimate().confident);
+    REQUIRE_THROWS(estimator.update({0.0, {10e-6, 0.0, 30e-6}}, {0.0, 10e-6, 30e-6}));
+    estimator.reset();
+    REQUIRE_FALSE(estimator.estimate().valid);
+    REQUIRE_THROWS(
+        estimator.predict(-1.0, {0.0, 0.0, 30e-6}, Eigen::Vector3d::Zero(), 0.1));
+}
+TEST_CASE(
+    "magnetic history initialization preserves unobservable attitude uncertainty") {
+    detumble::AttitudeEstimatorConfig config;
+    config.initialization_window_s = 2.0;
+    detumble::AttitudeEstimator estimator{config};
+    const Eigen::Vector3d field{0.0, 0.0, 30e-6};
+    for (unsigned i = 0; i <= 20; ++i) {
+        const double time = 0.1 * i;
+        estimator.update({time, field}, field);
+        if (i < 20)
+            estimator.predict(time, field, Eigen::Vector3d::Zero(), 0.1);
+    }
+    REQUIRE(estimator.estimate().valid);
+    REQUIRE_FALSE(estimator.estimate().confident);
+    const Eigen::SelfAdjointEigenSolver<detumble::EstimatorCovariance> covariance{
+        estimator.estimate().covariance};
+    REQUIRE(covariance.eigenvalues().minCoeff() > -1e-12);
+    REQUIRE(estimator.estimate().covariance.block<3, 3>(0, 0).trace() > 1.0);
 }
 
-detumble::AttitudeEstimatorInput estimator_input(
-    const double time_s,
-    const Eigen::Quaterniond& true_attitude,
-    const Eigen::Vector3d& angular_velocity_body_rad_s
-) {
-    const Eigen::Vector3d magnetic_reference{0.2, -0.7, 0.5};
-    const Eigen::Vector3d sun_reference{1.0, 0.1, -0.2};
-    return {
-        .sample_time_s = time_s,
-        .angular_velocity_body_rad_s = angular_velocity_body_rad_s,
-        .gyroscope_valid = true,
-        .magnetic_field = observation(true_attitude, magnetic_reference),
-        .sun_direction = observation(true_attitude, sun_reference)
-    };
+TEST_CASE("gyro-free EKF converges from arbitrary seeded orientations with realistic "
+          "errors") {
+    for (const std::uint64_t seed : {7ULL, 42ULL, 2025ULL}) {
+        detumble::MissionRunConfig config;
+        config.seed = seed;
+        config.duration_s = 600.0;
+        config.flight_software.controller_selection =
+            detumble::DetumbleController::estimated_rate;
+        const auto metrics = detumble::run_native_mission(config);
+        CAPTURE(seed, metrics.final_rate_estimation_error_rad_s,
+                metrics.final_attitude_estimation_error_rad);
+        REQUIRE(metrics.estimator_convergence_time_s.has_value());
+        REQUIRE(metrics.controller_handoff_time_s.has_value());
+        REQUIRE(metrics.final_rate_estimation_error_rad_s <
+                0.05 * std::numbers::pi / 180.0);
+        REQUIRE(metrics.final_attitude_estimation_error_rad <
+                2.0 * std::numbers::pi / 180.0);
+        REQUIRE(metrics.false_low_rate_events == 0);
+    }
 }
-
-}  // namespace
-
-TEST_CASE("TRIAD recovers a known body-to-inertial attitude") {
-    const Eigen::Quaterniond truth{
-        Eigen::AngleAxisd{
-            73.0 * std::numbers::pi / 180.0,
-            Eigen::Vector3d{1.0, -2.0, 0.5}.normalized()
+TEST_CASE("gyro-free initialization handles rotation initially parallel to the "
+          "measured field") {
+    detumble::Environment environment;
+    detumble::AttitudeState truth;
+    const Eigen::Vector3d reference = environment.reference_field_inertial_T(0.0);
+    truth.angular_velocity_body_rad_s =
+        reference.normalized() * 15.0 * std::numbers::pi / 180.0;
+    detumble::AttitudeEstimator estimator;
+    for (unsigned step = 0; step <= 1200; ++step) {
+        const double time = 0.1 * step;
+        const auto field = environment.reference_field_inertial_T(time);
+        estimator.update({time, truth.body_to_inertial.conjugate() * field}, field);
+        if (step < 1200) {
+            estimator.predict(time, field, Eigen::Vector3d::Zero(), 0.1);
+            truth = detumble::propagate_rigid_body_rk4(
+                detumble::generic_3u_cubesat(), truth, Eigen::Vector3d::Zero(), 0.1);
         }
-    };
-    const detumble::AttitudeEstimatorInput input =
-        estimator_input(0.0, truth, Eigen::Vector3d::Zero());
-
-    const auto triad = detumble::triad_attitude_body_to_inertial(
-        *input.magnetic_field,
-        *input.sun_direction
-    );
-
-    REQUIRE(triad.has_value());
-    REQUIRE(detumble::attitude_error_angle_rad(*triad, truth)
-            < 1.0e-12);
-}
-
-TEST_CASE("attitude estimator correction gain moves toward TRIAD") {
-    const Eigen::Quaterniond truth{
-        Eigen::AngleAxisd{1.0, Eigen::Vector3d::UnitZ()}
-    };
-    detumble::AttitudeEstimator estimator{
-        detumble::AttitudeEstimatorConfig{.correction_gain = 0.25}
-    };
-
-    estimator.update(estimator_input(0.0, truth, Eigen::Vector3d::Zero()));
-
-    REQUIRE(estimator.estimate().valid);
-    REQUIRE(estimator.estimate().correction_status
-            == detumble::AttitudeCorrectionStatus::accepted);
-    REQUIRE(estimator.estimate().accepted_correction_count == 1);
-    REQUIRE(detumble::attitude_error_angle_rad(
-                estimator.estimate().body_to_inertial,
-                truth
-            ) == Catch::Approx(0.75).margin(1.0e-12));
-}
-
-TEST_CASE("gyro propagation tracks a slowly rotating attitude") {
-    const Eigen::Vector3d rate{0.01, -0.02, 0.03};
-    Eigen::Quaterniond truth{
-        Eigen::AngleAxisd{1.4, Eigen::Vector3d{1.0, 2.0, -1.0}.normalized()}
-    };
-    detumble::AttitudeEstimator estimator{
-        detumble::AttitudeEstimatorConfig{.correction_gain = 0.25}
-    };
-
-    estimator.update(estimator_input(0.0, truth, rate));
-    for (int sample = 1; sample <= 80; ++sample) {
-        truth = detumble::integrate_attitude(truth, rate, 0.1);
-        estimator.update(estimator_input(0.1 * sample, truth, rate));
     }
-
-    REQUIRE(detumble::attitude_error_angle_rad(
-                estimator.estimate().body_to_inertial,
-                truth
-            ) < 1.0e-8);
-}
-
-TEST_CASE("gyro propagation holds the previous sample over each interval") {
-    detumble::AttitudeEstimator estimator{
-        detumble::AttitudeEstimatorConfig{.correction_gain = 1.0}
-    };
-    estimator.update(estimator_input(
-        0.0,
-        Eigen::Quaterniond::Identity(),
-        Eigen::Vector3d::UnitX()
-    ));
-
-    estimator.update({
-        .sample_time_s = 1.0,
-        .angular_velocity_body_rad_s = Eigen::Vector3d::Zero(),
-        .gyroscope_valid = true
-    });
-
-    const Eigen::Quaterniond expected{
-        Eigen::AngleAxisd{1.0, Eigen::Vector3d::UnitX()}
-    };
-    REQUIRE(detumble::attitude_error_angle_rad(
-                estimator.estimate().body_to_inertial,
-                expected
-            ) < 1.0e-12);
-}
-
-TEST_CASE("estimator propagates through eclipse and corrects afterward") {
-    const Eigen::Vector3d rate{0.005, 0.01, -0.008};
-    Eigen::Quaterniond truth{
-        Eigen::AngleAxisd{0.8, Eigen::Vector3d{2.0, -1.0, 1.0}.normalized()}
-    };
-    detumble::AttitudeEstimator estimator{
-        detumble::AttitudeEstimatorConfig{.correction_gain = 1.0}
-    };
-    estimator.update(estimator_input(0.0, truth, rate));
-
-    for (int sample = 1; sample <= 100; ++sample) {
-        truth = detumble::integrate_attitude(truth, rate, 0.1);
-        auto input = estimator_input(0.1 * sample, truth, rate);
-        input.sun_direction->valid = false;
-        estimator.update(input);
-        REQUIRE(estimator.estimate().correction_status
-                == detumble::AttitudeCorrectionStatus::unavailable);
-    }
-
     REQUIRE(estimator.estimate().valid);
-    REQUIRE(detumble::attitude_error_angle_rad(
-                estimator.estimate().body_to_inertial,
-                truth
-            ) < 1.0e-7);
+    REQUIRE((estimator.estimate().attitude.angular_velocity_body_rad_s -
+             truth.angular_velocity_body_rad_s)
+                .norm() < 0.05 * std::numbers::pi / 180.0);
+    REQUIRE(estimator.estimate().confident);
 
-    truth = detumble::integrate_attitude(truth, rate, 0.1);
-    estimator.update(estimator_input(10.1, truth, rate));
-    REQUIRE(estimator.estimate().correction_status
-            == detumble::AttitudeCorrectionStatus::accepted);
-    REQUIRE(detumble::attitude_error_angle_rad(
-                estimator.estimate().body_to_inertial,
-                truth
-            ) < 1.0e-12);
-}
-
-TEST_CASE("TRIAD rejects nearly parallel vector pairs") {
-    const detumble::AttitudeVectorObservation magnetic{
-        .measured_body = Eigen::Vector3d::UnitX(),
-        .reference_inertial = Eigen::Vector3d::UnitY(),
-        .valid = true
-    };
-    const detumble::AttitudeVectorObservation sun{
-        .measured_body = Eigen::Vector3d{1.0, 1.0e-4, 0.0},
-        .reference_inertial = Eigen::Vector3d{0.0, 1.0, 1.0e-4},
-        .valid = true
-    };
-    detumble::AttitudeEstimator estimator;
-
-    estimator.update({
-        .sample_time_s = 0.0,
-        .magnetic_field = magnetic,
-        .sun_direction = sun
-    });
-
-    REQUIRE_FALSE(detumble::triad_attitude_body_to_inertial(
-        magnetic,
-        sun
-    ).has_value());
+    // A large finite outlier must remove confidence without correcting toward it.
+    const auto before = estimator.estimate().attitude;
+    const auto next_field = environment.reference_field_inertial_T(120.1);
+    estimator.update({120.1, before.body_to_inertial.conjugate() * next_field +
+                                 Eigen::Vector3d{20e-6, 0.0, 0.0}},
+                     next_field);
+    REQUIRE_FALSE(estimator.estimate().confident);
+    REQUIRE(estimator.estimate().status == detumble::EstimatorStatus::rejected);
+    REQUIRE(estimator.estimate().attitude.angular_velocity_body_rad_s ==
+            before.angular_velocity_body_rad_s);
+    for (unsigned i = 2; i <= 20; ++i) {
+        const double time = 120.0 + 0.1 * i;
+        const auto field = environment.reference_field_inertial_T(time);
+        estimator.update({time, before.body_to_inertial.conjugate() * field +
+                                    Eigen::Vector3d{20e-6, 0.0, 0.0}},
+                         field);
+    }
     REQUIRE_FALSE(estimator.estimate().valid);
-    REQUIRE(estimator.estimate().correction_status
-            == detumble::AttitudeCorrectionStatus::degenerate_vectors);
-}
-
-TEST_CASE("estimator rejects invalid observations without losing propagation") {
-    detumble::AttitudeEstimator estimator;
-    auto input = estimator_input(
-        0.0,
-        Eigen::Quaterniond::Identity(),
-        Eigen::Vector3d::Zero()
-    );
-    input.magnetic_field->measured_body.x() =
-        std::numeric_limits<double>::quiet_NaN();
-
-    estimator.update(input);
-
-    REQUIRE_FALSE(estimator.estimate().valid);
-    REQUIRE(estimator.estimate().correction_status
-            == detumble::AttitudeCorrectionStatus::invalid_measurement);
-    REQUIRE(estimator.estimate().body_to_inertial.w()
-            == Catch::Approx(1.0));
-}
-
-TEST_CASE("attitude error treats opposite quaternion signs as equal") {
-    const Eigen::Quaterniond attitude{
-        Eigen::AngleAxisd{0.4, Eigen::Vector3d::UnitY()}
-    };
-    Eigen::Quaterniond negated = attitude;
-    negated.coeffs() *= -1.0;
-
-    REQUIRE(detumble::attitude_error_angle_rad(attitude, negated)
-            < 1.0e-12);
+    REQUIRE(estimator.estimate().status == detumble::EstimatorStatus::collecting);
 }

@@ -1,0 +1,2 @@
+controller,runs,successes,mean_detumble_time_s,median_detumble_time_s,p95_detumble_time_s,maximum_detumble_time_s,worst_final_rate_deg_s,mean_dipole_effort_A2_m4_s,converged_estimators,handoffs,false_low_rate_events
+bdot,25,25,4249.1016,4354.4400000000005,5535.852,5745.92,0.1644490106488233,36.290712513247335,0,0,0

@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.25...4.4)
 
 project(
     detumble
-    VERSION 0.1.0
+    VERSION 0.2.0
     DESCRIPTION "CubeSat attitude-control simulation"
     LANGUAGES CXX
 )
@@ -33,12 +33,10 @@ add_library(
         src/attitude.cpp
         src/attitude_estimator.cpp
         src/bdot.cpp
-        src/coarse_sun_sensor.cpp
         src/dynamics.cpp
         src/environment.cpp
         src/flight_software.cpp
         src/frames.cpp
-        src/gyroscope.cpp
         src/initial_conditions.cpp
         src/magnetic_control.cpp
         src/magnetic_field.cpp
@@ -46,12 +44,10 @@ add_library(
         src/magnetorquer.cpp
         src/mission.cpp
         src/orbit.cpp
-        src/reaction_wheel.cpp
         src/sensor_error.cpp
         src/sensor_suite.cpp
         src/simulation.cpp
         src/spacecraft_visual.cpp
-        src/sun_pointing.cpp
         src/version.cpp
 )
 add_library(detumble::core ALIAS detumble_core)
@@ -128,7 +124,7 @@ if(DETUMBLE_BUILD_VIEWER)
     )
     target_link_libraries(detumble_rlimgui PUBLIC detumble_imgui raylib)
 
-    add_executable(detumble_viewer apps/viewer_main.cpp)
+    add_executable(detumble_viewer apps/viewer_main.cpp apps/rod_view.cpp)
     target_link_libraries(
         detumble_viewer
         PRIVATE
@@ -137,12 +133,26 @@ if(DETUMBLE_BUILD_VIEWER)
             raylib
     )
     detumble_enable_warnings(detumble_viewer)
+    # Relink and refresh packaged assets when models or notices change.
+    set_property(TARGET detumble_viewer APPEND PROPERTY LINK_DEPENDS
+        ${PROJECT_SOURCE_DIR}/assets/models/icecube_3u.glb
+        ${PROJECT_SOURCE_DIR}/assets/models/ICECube-NOTICE.txt
+        ${PROJECT_SOURCE_DIR}/assets/models/detumble_3u.glb
+    )
 
     add_custom_command(
         TARGET detumble_viewer POST_BUILD
         COMMAND
             ${CMAKE_COMMAND} -E make_directory
             $<TARGET_FILE_DIR:detumble_viewer>/assets/models
+        COMMAND
+            ${CMAKE_COMMAND} -E copy_if_different
+            ${PROJECT_SOURCE_DIR}/assets/models/icecube_3u.glb
+            $<TARGET_FILE_DIR:detumble_viewer>/assets/models/icecube_3u.glb
+        COMMAND
+            ${CMAKE_COMMAND} -E copy_if_different
+            ${PROJECT_SOURCE_DIR}/assets/models/ICECube-NOTICE.txt
+            $<TARGET_FILE_DIR:detumble_viewer>/assets/models/ICECube-NOTICE.txt
         COMMAND
             ${CMAKE_COMMAND} -E copy_if_different
             ${PROJECT_SOURCE_DIR}/assets/models/detumble_3u.glb
@@ -169,14 +179,11 @@ if(BUILD_TESTING)
         detumble_tests
         tests/attitude_test.cpp
         tests/attitude_estimator_test.cpp
-        tests/autonomous_flight_software_test.cpp
         tests/bdot_test.cpp
-        tests/coarse_sun_sensor_test.cpp
         tests/dynamics_test.cpp
         tests/detumble_validation_test.cpp
         tests/flight_software_test.cpp
         tests/frames_test.cpp
-        tests/gyroscope_test.cpp
         tests/initial_conditions_test.cpp
         tests/magnetic_control_test.cpp
         tests/magnetic_field_test.cpp
@@ -184,14 +191,11 @@ if(BUILD_TESTING)
         tests/magnetorquer_test.cpp
         tests/mission_validation_test.cpp
         tests/orbit_test.cpp
-        tests/reaction_wheel_test.cpp
         tests/robustness_validation_test.cpp
         tests/sensor_error_test.cpp
         tests/simulation_test.cpp
         tests/spacecraft_visual_test.cpp
         tests/smoke_test.cpp
-        tests/sun_environment_test.cpp
-        tests/sun_pointing_test.cpp
     )
     target_link_libraries(
         detumble_tests
